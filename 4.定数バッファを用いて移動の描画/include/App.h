@@ -99,7 +99,7 @@ private:
     ComPtr<ID3D12CommandAllocator>         m_pCommandAllocator[FrameCount];    // コマンドアロケータ
     ComPtr<ID3D12GraphicsCommandList>      m_pCommandList;                     // コマンドリスト
     ComPtr<ID3D12Fence>                    m_pFence;                       // フェンス
-    ComPtr<ID3D12DescriptorHeap>           m_pHeapCBV;                     // ディスクリプタヒープ(定数バッファビュー・シェーダリソースビュー・アンオーダードアクセスビュー)
+    ComPtr<ID3D12DescriptorHeap>           m_pHeapRTV;                     // ディスクリプタヒープ(定数バッファビュー・シェーダリソースビュー・アンオーダードアクセスビュー)
     ComPtr<ID3D12Resource>                 m_pVB;                          // 頂点バッファ
 	ComPtr<ID3D12Resource>                 m_pIB;                          // インデックスバッファ
     ComPtr<ID3D12Resource>                 m_pCB[FrameCount];              // 定数バッファ

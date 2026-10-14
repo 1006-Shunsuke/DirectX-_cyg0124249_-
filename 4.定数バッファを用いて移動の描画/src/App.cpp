@@ -63,7 +63,6 @@ App::App(uint32_t width, uint32_t height)
     , m_VBV{}
     , m_Viewport{}
     , m_Scissor{}
-    , m_CBV{}
     , m_RotateAngle(0.0f)
 {
 }
@@ -339,7 +338,7 @@ heap.NumDescriptors = FrameCount;//リソース数と同じ
 heap.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
 heap.NodeMask = 0;
 //デバイスの機能を使いディスクリプタヒープの生成
-hr = m_pDevice->CreateDescriptorHeap(&heap, IID_PPV_ARGS(&m_pHeapRTV));
+hr = m_pDevice->CreateDescriptorHeap(&heap, IID_PPV_ARGS(m_pHeapRTV.GetAddressOf()));
 if (FAILED(hr))return false;
 //生成
 //RTV用ディスクリプタヒープの先頭のCPUディスクリプタハンドル(アドレス)を取得
@@ -489,10 +488,10 @@ bool App::OnInit()
     {
         // 頂点データ(中身)
         Vertex vertices[] = {
-            { XMFLOAT3(-1.0f, 1.0f, 0.0f), (0, 255, 255, 255) },//floatとuint8_t
-            { XMFLOAT3(-1.0f, -1.0f, 0.0f),(0, 0, 255, 255) },
-            { XMFLOAT3(1.0f, -1.0f, 0.0f), (0, 0, 255, 255) },
-            { XMFLOAT3(1.0f,  1.0f, 0.0f), (255, 0, 0, 255) },
+            { XMFLOAT3(-1.0f, 1.0f, 0.0f), {0, 255, 255, 255} },//floatとuint8_t
+            { XMFLOAT3(-1.0f, -1.0f, 0.0f),{0, 0, 255, 255} },
+            { XMFLOAT3(1.0f, -1.0f, 0.0f), {0, 0, 255, 255} },
+            { XMFLOAT3(1.0f,  1.0f, 0.0f), {255, 0, 0, 255} },
         };
 
         m_VertexCount = _countof(vertices);
@@ -699,12 +698,12 @@ bool App::OnInit()
             }
 
             // 変換行列の設定 .
-            m_pTransform[i].pBuffer->World = XMMatrixIdentity();
-            m_pTransform[i].pBuffer->View = XMMatrixLookAtRH(eyePos, targetPos, upward);
-            m_pTransform[i].pBuffer->Proj = XMMatrixPerspectiveFovRH(fovY, aspect, 1.0f, 1000.0f);
+            m_pTransform[i]->World = XMMatrixIdentity();
+            m_pTransform[i]->View = XMMatrixLookAtRH(eyePos, targetPos, upward);
+            m_pTransform[i]->Proj = XMMatrixPerspectiveFovRH(fovY, aspect, 1.0f, 1000.0f);
 
         }
-        m_pMoveParam.OffsetX = 0.0f;
+        m_MoveParam.OffsetX = 0.0f;
     }
 
     //3.ルートシグニチャの生成
@@ -727,7 +726,7 @@ bool App::OnInit()
         params[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
         params[1].Constants.ShaderRegister = 1;
 		params[1].Constants.RegisterSpace = 0;
-        params[1].Constants.Num32BitValues = sizeof(MoveParam);//
+        params[1].Constants.Num32BitValues = sizeof(MoveParam)/4;//
         params[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
 
         // ルートシグニチャの設定 .
@@ -783,7 +782,7 @@ bool App::OnInit()
 		// 頂点カラーの設定 .
         elements[1].SemanticName = "COLOR";
         elements[1].SemanticIndex = 0;
-		elements[1].Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+		elements[1].Format = DXGI_FORMAT_R8G8B8A8_UNORM;
         elements[1].InputSlot = 0;
         elements[1].AlignedByteOffset = D3D12_APPEND_ALIGNED_ELEMENT;
         elements[1].InputSlotClass = D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA;
@@ -922,6 +921,8 @@ void App::Render()
 
     //レンダーターゲットビューをクリア
     m_pCommandList->ClearRenderTargetView(m_HandleRTV[m_FrameIndex], clearColor, 0, nullptr);
+
+    m_MoveParam.OffsetX = sinf(m_Timer.GetTotalTime()) * 1.0f;
 
     //描画処理
     {
