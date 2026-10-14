@@ -48,7 +48,7 @@ void SafeRelease(T*& ptr)
 struct Vertex
 {
     XMFLOAT3 Position;
-    XMFLOAT4 Color;
+    uint8_t Color;
 };
 
 App::App(uint32_t width, uint32_t height)
@@ -480,10 +480,10 @@ bool App::OnInit()
     {
         // 頂点データ(中身)
         Vertex vertices[] = {
-            { XMFLOAT3(-1.0f, 1.0f, 0.0f), XMFLOAT4(0.0f, 0.0f, 1.0f, 1.0f) },
-            { XMFLOAT3(-1.0f, -1.0f, 0.0f),XMFLOAT4(0.0f, 0.0f, 1.0f, 1.0f) },
-            { XMFLOAT3(1.0f, -1.0f, 0.0f), XMFLOAT4(0.0f, 0.0f, 1.0f, 1.0f) },
-            { XMFLOAT3(1.0f,  1.0f, 0.0f), XMFLOAT4(1.0f, 0.0f, 0.0f, 1.0f) },
+            { XMFLOAT3(-1.0f, 1.0f, 0.0f), (0, 255, 255, 255) },//floatとuint8_t
+            { XMFLOAT3(-1.0f, -1.0f, 0.0f),(0, 0, 255, 255) },
+            { XMFLOAT3(1.0f, -1.0f, 0.0f), (0, 0, 255, 255) },
+            { XMFLOAT3(1.0f,  1.0f, 0.0f), (255, 0, 0, 255) },
         };
 
         m_VertexCount = _countof(vertices);
@@ -826,36 +826,38 @@ bool App::OnInit()
     //4.パイプラインステートの生成
     {
         // 入力レイアウトの設定 .
+		// 頂点シェーダの入力に合わせて設定する必要がある
         D3D12_INPUT_ELEMENT_DESC elements[2];
         elements[0].SemanticName = "POSITION";
-        elements[0].SemanticIndex = 0;
-        elements[0].Format = DXGI_FORMAT_R32G32B32_FLOAT;
-        elements[0].InputSlot = 0;
-        elements[0].AlignedByteOffset = D3D12_APPEND_ALIGNED_ELEMENT;
+		elements[0].SemanticIndex = 0;//同じSemantic名のものがない限り0
+		elements[0].Format = DXGI_FORMAT_R32G32B32_FLOAT;//頂点シェーダの入力に合わせる
+		elements[0].InputSlot = 0;//IASetVertexBuffers()で何番スロットにどのバッファを置くかを決める.→ここでその頂点バッファのスロット番号を決定する
+        elements[0].AlignedByteOffset = D3D12_APPEND_ALIGNED_ELEMENT;//前の要素の直後に自動配置
         elements[0].InputSlotClass = D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA;
-        elements[0].InstanceDataStepRate = 0;
+		elements[0].InstanceDataStepRate = 0;//入力要素が頂点ごとなら0,インスタンスごとなら1以上の値を設定する
 
+		// 頂点カラーの設定 .
         elements[1].SemanticName = "COLOR";
         elements[1].SemanticIndex = 0;
-        elements[1].Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
+		elements[1].Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
         elements[1].InputSlot = 0;
         elements[1].AlignedByteOffset = D3D12_APPEND_ALIGNED_ELEMENT;
         elements[1].InputSlotClass = D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA;
         elements[1].InstanceDataStepRate = 0;
 
-        // ラスタライザーステートの設定 .
+        // ラスタライザーステートの設定 .(ラスタライズを行う際の状態設定)
         D3D12_RASTERIZER_DESC descRS;
-        descRS.FillMode = D3D12_FILL_MODE_SOLID;
-        descRS.CullMode = D3D12_CULL_MODE_NONE;
-        descRS.FrontCounterClockwise = FALSE;
-        descRS.DepthBias = D3D12_DEFAULT_DEPTH_BIAS;
-        descRS.DepthBiasClamp = D3D12_DEFAULT_DEPTH_BIAS_CLAMP;
-        descRS.SlopeScaledDepthBias = D3D12_DEFAULT_SLOPE_SCALED_DEPTH_BIAS;
-        descRS.DepthClipEnable = FALSE;
-        descRS.MultisampleEnable = FALSE;
-        descRS.AntialiasedLineEnable = FALSE;
+		descRS.FillMode = D3D12_FILL_MODE_SOLID;//三角形を塗りつぶし
+		descRS.CullMode = D3D12_CULL_MODE_NONE;//前面も背面も描画する
+		descRS.FrontCounterClockwise = FALSE;//頂点の並び順が反時計回りなら前面とする
+		descRS.DepthBias = D3D12_DEFAULT_DEPTH_BIAS;//与えられた深度値に加算する値(0でOK)
+		descRS.DepthBiasClamp = D3D12_DEFAULT_DEPTH_BIAS_CLAMP;//DepthBiasの最大値(0でOK)
+		descRS.SlopeScaledDepthBias = D3D12_DEFAULT_SLOPE_SCALED_DEPTH_BIAS;//深度値に加算する値の勾配に応じたスケーリング値(0でOK)
+		descRS.DepthClipEnable = FALSE;//距離に基づくクリッピングを有効にするかどうか(無効でOK)
+		descRS.MultisampleEnable = FALSE//マルチサンプリング
+        descRS.AntialiasedLineEnable = TRUE;//アンチエイリアス
         descRS.ForcedSampleCount = 0;
-        descRS.ConservativeRaster = D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF;
+        descRS.ConservativeRaster = D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF;//厳密判定OFF
 
         // レンダーターゲットのブレンド設定 .
         D3D12_RENDER_TARGET_BLEND_DESC descRTBS = {
