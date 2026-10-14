@@ -40,7 +40,7 @@ struct alignas(256) Transform
     DirectX::XMMATRIX   View;       // ビュー行列です.
     DirectX::XMMATRIX   Proj;       // 射影行列です.
 };
-struct alignas(256) MoveParam
+struct MoveParam
 {
 	float OffsetX;    // X方向の移動量です.
 };
@@ -98,7 +98,6 @@ private:
     ComPtr<ID3D12Resource>                 m_pColorBuffer[FrameCount];     // カラーバッファ
     ComPtr<ID3D12CommandAllocator>         m_pCommandAllocator[FrameCount];    // コマンドアロケータ
     ComPtr<ID3D12GraphicsCommandList>      m_pCommandList;                     // コマンドリスト
-    ComPtr<ID3D12DescriptorHeap>           m_pHeapRTV;                     // ディスクリプタヒープ(レンダーターゲットビュー).
     ComPtr<ID3D12Fence>                    m_pFence;                       // フェンス
     ComPtr<ID3D12DescriptorHeap>           m_pHeapCBV;                     // ディスクリプタヒープ(定数バッファビュー・シェーダリソースビュー・アンオーダードアクセスビュー)
     ComPtr<ID3D12Resource>                 m_pVB;                          // 頂点バッファ
@@ -115,9 +114,10 @@ private:
     D3D12_VIEWPORT                  m_Viewport;                     // ビューポート
     D3D12_RECT                      m_Scissor;                      // シザー矩形
 	D3D12_INDEX_BUFFER_VIEW         m_IBV;                          // インデックスバッファビュー
-    ConstantBufferView<Transform>   m_CBV[FrameCount];              // 定数バッファビュー
 	UINT                            m_IndexCount;                     //インデックス数を保持するメンバ変数
     UINT                            m_VertexCount;                  // 頂点数を保持するメンバ変数
+    Transform*                      m_pTransform[FrameCount] = {};
+    MoveParam                       m_MoveParam = {};
     float                           m_RotateAngle;
 
     Timer                           m_Timer; // 追加: Timerクラスのメンバ変数

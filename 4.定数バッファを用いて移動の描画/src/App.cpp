@@ -48,7 +48,7 @@ void SafeRelease(T*& ptr)
 struct Vertex
 {
     XMFLOAT3 Position;
-    uint8_t Color;
+    uint8_t Color[4];
 };
 
 App::App(uint32_t width, uint32_t height)
@@ -469,14 +469,23 @@ void App::TermD3D()
 //--------------------------------------------------------
 //   「描画に必要なGPUリソースを一通り作る」初期化関数
 //--------------------------------------------------------
+// 
+// 描画に必要なデータは「頂点情報」→「インデックス情報」→「定数バッファ情報」→「ルートシグニチャ情報」→「パイプラインステート情報」の順に作る必要がある
+// データ自体は最初頂点データがCPUにあり、それをシェーダーが扱えるようにするために、頂点データ本体はGPU側が読み取れるような「リソース」,そのリソースの使い方として「ディスクリプタ」を作る必要がある.
+// そのリソース自体は「ヒープ」というGPUがアクセスできるメモリ上の「空の入れ物」に入れる必要がある.「ディスクリプタ」もディスクリプタヒープという空の配列に入れる必要がある.
+// 
+// 
 //-----------------------------------------------------------------------------
 //      初期化時の処理
 //-----------------------------------------------------------------------------
 bool App::OnInit()
 {
-    //0.頂点バッファの生成
+    //0.頂点バッファ(頂点情報のリソース)の生成
+	// 本来頂点情報はCPUにあるが、GPUが扱えるようにするために、GPU側が読み取れるような「リソース」を作る必要がある
     // 頂点シェーダ(IA)の入力データに合致するように頂点バッファを作成する。
+	// GPUが読むとき、必要な情報は「アドレス・サイズ・ストライド」のみであるため、ディスクリプタは不要で「ビュー」と呼ばれる構造体を作るだけでよい
     // 頂点データをGPU側が扱える頂点バッファの中に入れてGPUへの渡し方まで用意
+    //ここではGPU側では何の処理も行わない
     {
         // 頂点データ(中身)
         Vertex vertices[] = {
@@ -516,6 +525,7 @@ bool App::OnInit()
 
         // 生成
         // 設定をもとに実際にGPUメモリを確保し、リソースを作る
+        // このCreateCommittedResource関数は、ドライバを介してメモリを確保しているため、GPUからもアクセスできるようになっている
         auto hr = m_pDevice->CreateCommittedResource(
             &prop,
             D3D12_HEAP_FLAG_NONE,
@@ -550,7 +560,7 @@ bool App::OnInit()
         m_pVB->Unmap(0, nullptr);
 
         //0-3View構造体を作成
-        // 頂点バッファビューの設定 .(描画コマンドのために)
+        // 頂点バッファビューの設定 (ただし,ビューはGPU側から読めない)
         m_VBV.BufferLocation = m_pVB->GetGPUVirtualAddress();//GPU仮想アドレス
         m_VBV.SizeInBytes = static_cast<UINT>(sizeof(vertices));//頂点バッファ全体のサイズ
         m_VBV.StrideInBytes = static_cast<UINT>(sizeof(Vertex));//1頂点あたりのサイズ
@@ -566,7 +576,6 @@ bool App::OnInit()
         //1-1,リソースの生成
 
         // ヒーププロパティ
-        //どの種類のメモリに置くか,本件だとCPUから書ける実メモリに置く
         D3D12_HEAP_PROPERTIES prop = {};
         prop.Type = D3D12_HEAP_TYPE_UPLOAD;//GPUへ
         prop.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;//お任せ
@@ -574,24 +583,21 @@ bool App::OnInit()
         prop.CreationNodeMask = 1;//単一GPU
         prop.VisibleNodeMask = 1;//単一GPU
 
-        // リソース(空の入れ物)の設定
-        // この場合のメモリはGPUがアクセスできるメモリ上の「空の入れ物」
-        //確保するメモリの「形・サイズ・種類」をドライバに伝える
+        // リソースの設定
         D3D12_RESOURCE_DESC desc = {};
         desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;//バッファ
         desc.Alignment = 0;
-        desc.Width = sizeof(indicies);//Bufferの場合はバッファサイズ,Textureの場合は横幅
-        desc.Height = 1;//Bufferの場合は1,Textureの場合は縦幅
-        desc.DepthOrArraySize = 1;//Bufferの場合は1,Textureの場合は配列数,3次元テクスチャの場合は奥行き
-        desc.MipLevels = 1;//Textureの場合はミニマップレベル数
-        desc.Format = DXGI_FORMAT_UNKNOWN;//Textureの場合はピクセルフォーマット
+        desc.Width = sizeof(indicies);
+        desc.Height = 1;
+        desc.DepthOrArraySize = 1;
+        desc.MipLevels = 1;
+        desc.Format = DXGI_FORMAT_UNKNOWN;
         desc.SampleDesc.Count = 1;
-        desc.SampleDesc.Quality = 0;//Textureの場合はマルチサンプルを設定
-        desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;//レイアウト
+        desc.SampleDesc.Quality = 0;
+        desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
         desc.Flags = D3D12_RESOURCE_FLAG_NONE;
 
         // 生成
-        // 設定をもとに実際にGPUメモリを確保し、リソースを作る
         auto hr = m_pDevice->CreateCommittedResource(
             &prop,
             D3D12_HEAP_FLAG_NONE,
@@ -608,8 +614,6 @@ bool App::OnInit()
 
         //1-2頂点データを書き込む
         //マッピング
-        //m_pVBはリソースを操作するためのオブジェクトを指すポインタ
-        //確保した空メモリにCPU側の頂点データを実際に書き込む
 
         void* ptr = nullptr;
         hr = m_pIB->Map(0, nullptr, &ptr);
@@ -626,48 +630,27 @@ bool App::OnInit()
         m_pIB->Unmap(0, nullptr);
 
         //1-3View構造体を作成
-        // インデックスバッファビューの設定 .(描画コマンドのために)
+        // インデックスバッファビューの設定
         m_IBV.BufferLocation = m_pIB->GetGPUVirtualAddress();//GPU仮想アドレス
         m_IBV.Format = DXGI_FORMAT_R32_UINT;//頂点バッファ全体のサイズ
         m_IBV.SizeInBytes = static_cast<UINT>(sizeof(indicies));//1頂点あたりのサイズ
     }
 
     //2.定数バッファの生成
-
-    //2-4.ディスクリプタヒープ(棚)の生成
-	//ディスクリプタヒープ・・・ディスクリプタを連続して並べて置く配列
     //定数バッファはシェーダ内で計算に使う定数値のこと
-    //シェーダーのregister(b0)に結び付ける必要がある
-    //定数バッファ用ディスクリプタヒープ(リソースの説明書の棚)の生成
-    {
-        D3D12_DESCRIPTOR_HEAP_DESC desc = {};
-		desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;//定数バッファビュー用
-        desc.NumDescriptors = 1 * FrameCount;
-        desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-        desc.NodeMask = 0;
-
-        auto hr = m_pDevice->CreateDescriptorHeap(
-            &desc,
-            IID_PPV_ARGS(m_pHeapCBV.GetAddressOf()));
-        if (FAILED(hr))
-        {
-            ShowError(L"2-4 CBVヒープ生成", hr);
-            return false;
-        }
-    }
-
-    //メモリ領域やリソースの設定
+    // b0: Transform → ルートCBV  (GPU仮想アドレスをルートに直接渡す。ディスクリプタ・ヒープ不要)
+    // b1: MoveParam → ルート定数 (値そのものを描画時にルートへ書き込む。リソース不要)
     {
 
-        // ヒーププロパティ・・・実際のメモリを置く場所の設定
+        // ヒープの設定
         D3D12_HEAP_PROPERTIES prop = {};
 		prop.Type = D3D12_HEAP_TYPE_UPLOAD;//CPUから書けてGPUが読み込めるメモリ
 		prop.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;//Typeに応じて自動で決定
 		prop.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;//Typeに応じて自動で決定
-		prop.CreationNodeMask = 1;//Gpuが1つしかないので1
-		prop.VisibleNodeMask = 1;//Gpuが1つしかないので1
+		prop.CreationNodeMask = 1;
+		prop.VisibleNodeMask = 1;
 
-        // リソース(データ本体)の設定 .
+        // リソースの設定 .
 		// リソース・・・GPUから見えるメモリの塊,中身はただのバイト列
         D3D12_RESOURCE_DESC desc = {};
         desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
@@ -682,7 +665,13 @@ bool App::OnInit()
         desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
         desc.Flags = D3D12_RESOURCE_FLAG_NONE;
 
-        auto incrementSize = m_pDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);//ディスクリプタヒープ(棚)の1つ分のサイズを取得
+        //カメラ設定
+        auto eyePos = XMVectorSet(0.0f, 0.0f, 5.0f, 0.0f);
+        auto targetPos = XMVectorZero();
+        auto upward = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
+
+        constexpr auto fovY = XMConvertToRadians(37.5f);
+        auto aspect = static_cast<float>(m_Width) / static_cast<float>(m_Height);
 
         for (auto i = 0u; i < FrameCount; ++i)
         {
@@ -701,72 +690,21 @@ bool App::OnInit()
                 return false;
             }
 
-            //2-5.ディスクリプタ(=ビュー)の作成
-			//ディスクリプタ・・・リソースの説明書,リソースの使い方を記したもの,メモ
-			//GPUから見たときのCB[i]のアドレスを取得し、ディスクリプタヒープに書き込む
-			auto address = m_pCB[i]->GetGPUVirtualAddress();//GPU側の仮想アドレスを取得
-
-            //
-			auto handleCPU = m_pHeapCBV->GetCPUDescriptorHandleForHeapStart();//CPU側のディスクリプタヒープの先頭アドレスを取得
-			auto handleGPU = m_pHeapCBV->GetGPUDescriptorHandleForHeapStart();//GPU側のディスクリプタヒープの先頭アドレスを取得
-
-            handleCPU.ptr += incrementSize * i;
-            handleGPU.ptr += incrementSize * i;
-
-            // 定数バッファビューの設定 .
-            m_CBV[i].HandleCPU = handleCPU;
-            m_CBV[i].HandleGPU = handleGPU;
-            m_CBV[i].Desc.BufferLocation = address;
-            m_CBV[i].Desc.SizeInBytes = sizeof(Transform);
-
-            // 定数バッファビューを生成 .
-            m_pDevice->CreateConstantBufferView(&m_CBV[i].Desc, handleCPU);
-
             //2-2.マッピング
-            hr = m_pCB[i]->Map(0, nullptr, reinterpret_cast<void**>(&m_CBV[i].pBuffer));
+            hr = m_pCB[i]->Map(0, nullptr, reinterpret_cast<void**>(&m_pTransform[i]));
             if (FAILED(hr))
             {
                 ShowError(L"2-2 定数バッファMap", hr);
                 return false;
             }
 
-            auto eyePos = XMVectorSet(0.0f, 0.0f, 5.0f, 0.0f);
-            auto targetPos = XMVectorZero();
-            auto upward = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
-
-            constexpr auto fovY = XMConvertToRadians(37.5f);
-            auto aspect = static_cast<float>(m_Width) / static_cast<float>(m_Height);
-
             // 変換行列の設定 .
-            m_CBV[i].pBuffer->World = XMMatrixIdentity();
-            m_CBV[i].pBuffer->View = XMMatrixLookAtRH(eyePos, targetPos, upward);
-            m_CBV[i].pBuffer->Proj = XMMatrixPerspectiveFovRH(fovY, aspect, 1.0f, 1000.0f);
+            m_pTransform[i].pBuffer->World = XMMatrixIdentity();
+            m_pTransform[i].pBuffer->View = XMMatrixLookAtRH(eyePos, targetPos, upward);
+            m_pTransform[i].pBuffer->Proj = XMMatrixPerspectiveFovRH(fovY, aspect, 1.0f, 1000.0f);
 
-            // MoveParam用の定数バッファ(b1)
-            D3D12_RESOURCE_DESC moveDesc = desc;     // Transform用の設定をコピー
-            moveDesc.Width = sizeof(MoveParam);      // サイズだけ変える(alignas(256)なので256)
-
-            hr = m_pDevice->CreateCommittedResource(
-                &prop,
-                D3D12_HEAP_FLAG_NONE,
-                &moveDesc,
-                D3D12_RESOURCE_STATE_GENERIC_READ,
-                nullptr,
-                IID_PPV_ARGS(m_pMoveCB[i].GetAddressOf()));
-            if (FAILED(hr))
-            {
-                ShowError(L"2-1 MoveParam定数バッファ生成", hr);
-                return false;
-            }
-
-            hr = m_pMoveCB[i]->Map(0, nullptr, reinterpret_cast<void**>(&m_pMoveData[i]));
-            if (FAILED(hr))
-            {
-                ShowError(L"2-2 MoveParam Map", hr);
-                return false;
-            }
-            m_pMoveData[i]->OffsetX = 0.0f;
         }
+        m_pMoveParam.OffsetX = 0.0f;
     }
 
     //3.ルートシグニチャの生成
@@ -782,9 +720,14 @@ bool App::OnInit()
         D3D12_ROOT_PARAMETER params[2] = {};
         params[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
         params[0].Descriptor.ShaderRegister = 0;
+		params[0].Descriptor.RegisterSpace = 0;
         params[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
-        params[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
-        params[1].Descriptor.ShaderRegister = 1;
+
+
+        params[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
+        params[1].Constants.ShaderRegister = 1;
+		params[1].Constants.RegisterSpace = 0;
+        params[1].Constants.Num32BitValues = sizeof(MoveParam);//
         params[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
 
         // ルートシグニチャの設定 .
@@ -828,6 +771,7 @@ bool App::OnInit()
         // 入力レイアウトの設定 .
 		// 頂点シェーダの入力に合わせて設定する必要がある
         D3D12_INPUT_ELEMENT_DESC elements[2];
+        // 頂点座標の設定
         elements[0].SemanticName = "POSITION";
 		elements[0].SemanticIndex = 0;//同じSemantic名のものがない限り0
 		elements[0].Format = DXGI_FORMAT_R32G32B32_FLOAT;//頂点シェーダの入力に合わせる
@@ -854,7 +798,7 @@ bool App::OnInit()
 		descRS.DepthBiasClamp = D3D12_DEFAULT_DEPTH_BIAS_CLAMP;//DepthBiasの最大値(0でOK)
 		descRS.SlopeScaledDepthBias = D3D12_DEFAULT_SLOPE_SCALED_DEPTH_BIAS;//深度値に加算する値の勾配に応じたスケーリング値(0でOK)
 		descRS.DepthClipEnable = FALSE;//距離に基づくクリッピングを有効にするかどうか(無効でOK)
-		descRS.MultisampleEnable = FALSE//マルチサンプリング
+        descRS.MultisampleEnable = FALSE;//マルチサンプリング
         descRS.AntialiasedLineEnable = TRUE;//アンチエイリアス
         descRS.ForcedSampleCount = 0;
         descRS.ConservativeRaster = D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF;//厳密判定OFF
@@ -983,9 +927,8 @@ void App::Render()
     {
         //ポリゴン描画用の処理
         m_pCommandList->SetGraphicsRootSignature(m_pRootSignature.Get());
-        m_pCommandList->SetDescriptorHeaps(1, m_pHeapCBV.GetAddressOf());
-
-        m_pCommandList->SetGraphicsRootConstantBufferView(0, m_CBV[m_FrameIndex].Desc.BufferLocation);
+        m_pCommandList->SetGraphicsRootConstantBufferView(0, m_pCB[m_FrameIndex]->GetGPUVirtualAddress());
+        m_pCommandList->SetGraphicsRoot32BitConstants(1, sizeof(MoveParam) / 4, &m_MoveParam, 0);
         m_pCommandList->SetPipelineState(m_pPSO.Get());
 
         m_pCommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -1022,12 +965,13 @@ void App::Render()
 //-----------------------------------------------------------------------------
 void App::OnTerm()
 {
+    WaitGpu();
     for (auto i = 0u; i < FrameCount; ++i)
     {
         if (m_pCB[i].Get() != nullptr)
         {
             m_pCB[i]->Unmap(0, nullptr);
-            memset(&m_CBV[i], 0, sizeof(m_CBV[i]));
+            m_pTransform[i] = nullptr;
         }
         m_pCB[i].Reset();
     }
@@ -1035,5 +979,4 @@ void App::OnTerm()
     m_pIB.Reset();
     m_pPSO.Reset();
     m_pRootSignature.Reset();
-    m_pHeapCBV.Reset();
 }
