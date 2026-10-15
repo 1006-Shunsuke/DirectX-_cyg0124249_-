@@ -115,10 +115,8 @@ private:
     D3D12_RECT                      m_Scissor;                      // シザー矩形
 	D3D12_INDEX_BUFFER_VIEW         m_IBV;                          // インデックスバッファビュー
 	UINT                            m_IndexCount;                     //インデックス数を保持するメンバ変数
-    UINT                            m_VertexCount;                  // 頂点数を保持するメンバ変数
     Transform*                      m_pTransform[FrameCount] = {};
     MoveParam                       m_MoveParam = {};
-    float                           m_RotateAngle;
 
     Timer                           m_Timer; // 追加: Timerクラスのメンバ変数
 
