@@ -63,7 +63,6 @@ App::App(uint32_t width, uint32_t height)
     , m_VBV{}
     , m_Viewport{}
     , m_Scissor{}
-    , m_RotateAngle(0.0f)
 {
 }
 
@@ -166,9 +165,6 @@ bool App::InitWnd()//ウィンドウの初期化処理
     }
     //ウィンドウの表示
     ShowWindow(m_hWnd, SW_SHOW);
-    UpdateWindow(m_hWnd);
-
-    //ウィンドウの表示
     UpdateWindow(m_hWnd);
 
     //ウィンドウにフォーカスを設定
@@ -494,7 +490,6 @@ bool App::OnInit()
             { XMFLOAT3(1.0f,  1.0f, 0.0f), {255, 0, 0, 255} },
         };
 
-        m_VertexCount = _countof(vertices);
         //0-1,リソースの生成
 
         // ヒーププロパティ
@@ -534,7 +529,7 @@ bool App::OnInit()
 			IID_PPV_ARGS(m_pVB.GetAddressOf()));//メモリの確保とリソースの生成
         if (FAILED(hr))
         {
-            ShowError(L"1-1 頂点バッファ生成", hr);
+            ShowError(L"0-1 頂点バッファ生成", hr);
             return false;
         }
 
@@ -548,7 +543,7 @@ bool App::OnInit()
         hr = m_pVB->Map(0, nullptr, &ptr);
         if (FAILED(hr))
         {
-            ShowError(L"1-2 頂点バッファMap", hr);
+            ShowError(L"0-2 頂点バッファMap", hr);
             return false;
         }
 
@@ -606,7 +601,7 @@ bool App::OnInit()
             IID_PPV_ARGS(m_pIB.GetAddressOf()));
         if (FAILED(hr))
         {
-            ShowError(L"1-1 頂点バッファ生成", hr);
+            ShowError(L"1-1 インデックスバッファ生成", hr);
             return false;
         }
 
@@ -618,7 +613,7 @@ bool App::OnInit()
         hr = m_pIB->Map(0, nullptr, &ptr);
         if (FAILED(hr))
         {
-            ShowError(L"1-2 頂点バッファMap", hr);
+            ShowError(L"1-2 インデックスバッファMap", hr);
             return false;
         }
 
