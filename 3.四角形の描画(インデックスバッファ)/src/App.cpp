@@ -700,6 +700,9 @@ bool App::OnInit()
             }
 
             //2-5.ディスクリプタの作成
+			// ディスクリプタ・・・ビューの上位概念,GPUに送ったデータをシェーダーで使用するための「仕様書」
+            // ディスクリプタヒープ・・・テクスチャや定数などのアドレスを1カ所にまとめておくためのヒープ領域,ディスクリプタ置き場
+            
             auto address = m_pCB[i]->GetGPUVirtualAddress();
             auto handleCPU = m_pHeapCBV->GetCPUDescriptorHandleForHeapStart();
             auto handleGPU = m_pHeapCBV->GetGPUDescriptorHandleForHeapStart();
@@ -740,28 +743,42 @@ bool App::OnInit()
 
     //3.ルートシグニチャの生成
     //ルートシグニチャは定数バッファやテクスチャ,サンプラーといったシェーダ内で使用するリソースのレイアウトを決めるオブジェクト
+	//このシェーダには、どの種類のデータが、何個、どの経路で渡されるかを定義する
     {
 
-        auto flag = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
-        flag |= D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS;
-        flag |= D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS;
-        flag |= D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS;
+		// ルートシグニチャのフラグ設定 .
+        // 「頂点バッファを入力レイアウトで読む」という宣言
+		// |=はビット演算子ORの代入演算子で、複数のフラグをまとめて設定するために使用される。
+        auto flag = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;//(00001),入力アセンブラ(頂点バッファと入力レイアウト)を使うことの宣言
+		flag |= D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS;//(00101),ドメインシェーダーのルートアクセスを拒否
+		flag |= D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS;//(01101),ハルシェーダーのルートアクセスを拒否
+		flag |= D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS;//(11101),ジオメトリシェーダーのルートアクセスを拒否
 
-        // ルートパラメータの設定 .
-        D3D12_ROOT_PARAMETER param = {};
-        param.ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
-        param.Descriptor.ShaderRegister = 0;
-        param.Descriptor.RegisterSpace = 0;
-        param.ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
+        // 3-1.ルートパラメータの設定(CPU)
+		// ルートパラメータは、「どの方法で渡すか」「シェーダーのどのレジスタに届けるか」「どのシェーダーから見えるか」を定義する構造体
+		// この構造体をルートシグニチャの構造体に設定する.
+        D3D12_ROOT_PARAMETER param[2] = {};
+        params[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+		params[0].Descriptor.ShaderRegister = 0;//register(b0)に結び付ける(Transform)
+		params[0].Descriptor.RegisterSpace = 0;//RegisterSpaceは使わないので0
+        params[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;//頂点シェーダだけが見る
 
-        // ルートシグニチャの設定 .
+        params[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+        params[1].Descriptor.ShaderRegister = 1;   // b1 : MoveParam
+        params[1].Descriptor.RegisterSpace = 0;
+        params[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
+
+
+        // 3-2.ルートシグニチャの構成設定
+		// ルートシグニチャの構造体に、ルートパラメータの配列の先頭アドレスと個数を設定する
         D3D12_ROOT_SIGNATURE_DESC desc = {};
-        desc.NumParameters = 1;
-        desc.NumStaticSamplers = 0;
-        desc.pParameters = &param;
-        desc.pStaticSamplers = nullptr;
-        desc.Flags = flag;
+		desc.NumParameters = _countof(params);;//今回はルートパラメータが上の1個だけ
+		desc.NumStaticSamplers = 0;//
+		desc.pParameters = params;//ルートパラメータの配列の先頭アドレス
+		desc.pStaticSamplers = nullptr;//今回はサンプラーは使わないのでnullptr
+		desc.Flags = flag;//ルートシグニチャのフラグ設定
 
+		//3-3.ルートシグニチャの構成設定をシリアライズ
         ComPtr<ID3DBlob> pBlob;
         ComPtr<ID3DBlob> pErrorBlob;
 
@@ -776,6 +793,7 @@ bool App::OnInit()
             ShowError(L"3 ルートシグニチャ シリアライズ", hr);
             return false;
         }
+
 
         // ルートシグニチャを生成 .
         hr = m_pDevice->CreateRootSignature(
@@ -947,14 +965,16 @@ void App::Render()
     //描画処理
     {
         //ポリゴン描画用の処理
-        m_pCommandList->SetGraphicsRootSignature(m_pRootSignature.Get());
-        m_pCommandList->SetDescriptorHeaps(1, m_pHeapCBV.GetAddressOf());
-        m_pCommandList->SetGraphicsRootConstantBufferView(0, m_CBV[m_FrameIndex].Desc.BufferLocation);
-        m_pCommandList->SetPipelineState(m_pPSO.Get());
+
+		m_pCommandList->SetGraphicsRootSignature(m_pRootSignature.Get());//ルートシグニチャの設定
+		m_pCommandList->SetDescriptorHeaps(1, m_pHeapCBV.GetAddressOf());//ディスクリプタヒープの設定
+        m_pMoveData[m_FrameIndex]->OffsetX = 0.5f * sinf(m_Timer.GetTotalTime());
+        m_pCommandList->SetGraphicsRootConstantBufferView(1, m_pMoveCB[m_FrameIndex]->GetGPUVirtualAddress());
+		m_pCommandList->SetPipelineState(m_pPSO.Get());//パイプラインステートの設定
 
         m_pCommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-        m_pCommandList->IASetVertexBuffers(0, 1, &m_VBV);
-        m_pCommandList->IASetIndexBuffer(&m_IBV);
+		m_pCommandList->IASetVertexBuffers(0, 1, &m_VBV);//頂点バッファビューの設定
+		m_pCommandList->IASetIndexBuffer(&m_IBV);//インデックスバッファビューの設定
         m_pCommandList->RSSetViewports(1, &m_Viewport);
         m_pCommandList->RSSetScissorRects(1, &m_Scissor);
 

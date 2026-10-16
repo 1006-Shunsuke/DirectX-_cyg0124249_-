@@ -41,6 +41,11 @@ struct alignas(256) Transform
     DirectX::XMMATRIX   Proj;       // 射影行列です.
 };
 
+struct MoveParam 
+{ 
+    float OffsetX; 
+};
+
 ///////////////////////////////////////////////////////////////////////////////
 // ConstantBufferView structure
 ///////////////////////////////////////////////////////////////////////////////
@@ -88,35 +93,35 @@ private:
     uint32_t    m_Width;        // ウィンドウの横幅です.
     uint32_t    m_Height;       // ウィンドウの縦幅です.
 
-    ComPtr<ID3D12Device>                   m_pDevice;                      // デバイス
-    ComPtr<ID3D12CommandQueue>             m_pQueue;                       // コマンドキュー
-    ComPtr<IDXGISwapChain3>                m_pSwapChain;                   // スワップチェイン
-    ComPtr<ID3D12Resource>                 m_pColorBuffer[FrameCount];     // カラーバッファ
-    ComPtr<ID3D12CommandAllocator>         m_pCommandAllocator[FrameCount];    // コマンドアロケータ
-    ComPtr<ID3D12GraphicsCommandList>      m_pCommandList;                     // コマンドリスト
-    ComPtr<ID3D12DescriptorHeap>           m_pHeapRTV;                     // ディスクリプタヒープ(レンダーターゲットビュー).
-    ComPtr<ID3D12Fence>                    m_pFence;                       // フェンス
-    ComPtr<ID3D12DescriptorHeap>           m_pHeapCBV;                     // ディスクリプタヒープ(定数バッファビュー・シェーダリソースビュー・アンオーダードアクセスビュー)
-    ComPtr<ID3D12Resource>                 m_pVB;                          // 頂点バッファ
-	ComPtr<ID3D12Resource>                 m_pIB;                          // インデックスバッファ
-    ComPtr<ID3D12Resource>                 m_pCB[FrameCount];              // 定数バッファ
-    ComPtr<ID3D12RootSignature>            m_pRootSignature;               // ルートシグニチャ
-    ComPtr<ID3D12PipelineState>            m_pPSO;                         // パイプラインステート
+    ComPtr<ID3D12Device>                m_pDevice;                          // デバイス
+    ComPtr<ID3D12CommandQueue>          m_pQueue;                           // コマンドキュー
+    ComPtr<IDXGISwapChain3>             m_pSwapChain;                       // スワップチェイン
+    ComPtr<ID3D12Resource>              m_pColorBuffer[FrameCount];         // カラーバッファ
+    ComPtr<ID3D12CommandAllocator>      m_pCommandAllocator[FrameCount];    // コマンドアロケータ
+    ComPtr<ID3D12GraphicsCommandList>   m_pCommandList;                     // コマンドリスト
+    ComPtr<ID3D12DescriptorHeap>        m_pHeapRTV;                         // ディスクリプタヒープ(RTV)
+    ComPtr<ID3D12Fence>                 m_pFence;                           // フェンス
+    ComPtr<ID3D12Resource>              m_pVB;                              // 頂点バッファ
+    ComPtr<ID3D12Resource>              m_pIB;                              // インデックスバッファ
+    ComPtr<ID3D12Resource>              m_pCB[FrameCount];                  // 定数バッファ(Transform, b0)
+    ComPtr<ID3D12RootSignature>         m_pRootSignature;                   // ルートシグニチャ
+    ComPtr<ID3D12PipelineState>         m_pPSO;                             // パイプラインステート
 
     HANDLE                          m_FenceEvent;                   // フェンスイベント
     uint64_t                        m_FenceCounter[FrameCount];     // フェンスカウンター
     uint32_t                        m_FrameIndex;                   // フレーム番号
-    D3D12_CPU_DESCRIPTOR_HANDLE     m_HandleRTV[FrameCount];        // CPUディスクリプタ(レンダーターゲットビュー)
+    D3D12_CPU_DESCRIPTOR_HANDLE     m_HandleRTV[FrameCount];        // CPUディスクリプタハンドル(RTV)
     D3D12_VERTEX_BUFFER_VIEW        m_VBV;                          // 頂点バッファビュー
+    D3D12_INDEX_BUFFER_VIEW         m_IBV;                          // インデックスバッファビュー
     D3D12_VIEWPORT                  m_Viewport;                     // ビューポート
     D3D12_RECT                      m_Scissor;                      // シザー矩形
-	D3D12_INDEX_BUFFER_VIEW         m_IBV;                          // インデックスバッファビュー
-    ConstantBufferView<Transform>   m_CBV[FrameCount];              // 定数バッファビュー
-	UINT                            m_IndexCount;                     //インデックス数を保持するメンバ変数
-    UINT                            m_VertexCount;                  // 頂点数を保持するメンバ変数
+    Transform* m_pTransform[FrameCount] = {};  // 定数バッファ(b0)のMap先
+    MoveParam                       m_MoveParam = {};               // ルート定数(b1)の値
+    UINT                            m_IndexCount;                   // インデックス数
+    UINT                            m_VertexCount;                  // 頂点数
     float                           m_RotateAngle;
 
-    Timer                           m_Timer; // 追加: Timerクラスのメンバ変数
+    Timer                           m_Timer;
 
     //=========================================================================
     // private methods.

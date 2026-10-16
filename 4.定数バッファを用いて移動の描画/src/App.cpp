@@ -333,22 +333,28 @@ heap.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;//レンダーターゲットビュー用
 heap.NumDescriptors = FrameCount;//リソース数と同じ
 heap.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
 heap.NodeMask = 0;
-//デバイスの機能を使いディスクリプタヒープの生成
+
+
+// ディスクリプタヒープの生成
 hr = m_pDevice->CreateDescriptorHeap(&heap, IID_PPV_ARGS(m_pHeapRTV.GetAddressOf()));
 if (FAILED(hr))return false;
-//生成
+
 //RTV用ディスクリプタヒープの先頭のCPUディスクリプタハンドル(アドレス)を取得
 auto handle = m_pHeapRTV->GetCPUDescriptorHandleForHeapStart();
 //RTVディスクリプタ1個分のバイトサイズを取得,アドレス間の間隔サイズ
 auto incrementSize = m_pDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+
 for (auto i = 0u; i < FrameCount; ++i) {
     hr = m_pSwapChain->GetBuffer(i, IID_PPV_ARGS(m_pColorBuffer[i].GetAddressOf()));//バックバッファのポインタの取得
     if (FAILED(hr)) { return false; }
+
+    //rtvの設定
     D3D12_RENDER_TARGET_VIEW_DESC rtv = {};
     rtv.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;//sRGB
     rtv.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;//2次元テクスチャとしてアクセス
     rtv.Texture2D.MipSlice = 0;
     rtv.Texture2D.PlaneSlice = 0;
+
     //生成
     m_pDevice->CreateRenderTargetView(m_pColorBuffer[i].Get(), &rtv, handle);
     m_HandleRTV[i] = handle;
@@ -374,12 +380,15 @@ return true;
 //------------------------------------------------------------------
 //              画面に表示し、次のフレームの準備
 //------------------------------------------------------------------
+// ①画面の切り替え,②フェンスのシグナル,③必要なら待つ
 void App::Present(uint32_t interval)
 {
     // 画面に表示.
+    // この時のPresentはDXGIの関数で画面切り替えを依頼している
     m_pSwapChain->Present(interval, 0);
 
     // シグナル処理.
+    // 
     const auto currentValue = m_FenceCounter[m_FrameIndex];
     m_pQueue->Signal(m_pFence.Get(), currentValue);
 
@@ -885,23 +894,21 @@ bool App::OnInit()
 //------------------------------------------------------------------------------------
 //                            描画　処理
 //------------------------------------------------------------------------------------
+// 毎フレーム実行する描画処理その内訳は描画計算用のリソースバリアを生成し,
 void App::Render()
 {
     //コマンドの記録の開始
     //使い終わったメモリの再利用準備
     m_pCommandAllocator[m_FrameIndex]->Reset();
     m_pCommandList->Reset(m_pCommandAllocator[m_FrameIndex].Get(), nullptr);
+
     //描き込むためのリソースバリアの設定(表示→描画)
-    // 例
-    //バックバッファに三角形を描き込む処理A
-    //Present()で表示エンジンがそのバックバッファを画面に表示する処理B
-    //その処理Aと処理Bが同時に行われないためにリソースバリアは必要
     D3D12_RESOURCE_BARRIER barrier = {};
     barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;//使用用途の遷移
     barrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
-    barrier.Transition.pResource = m_pColorBuffer[m_FrameIndex].Get();
-    barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_PRESENT;
-    barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
+    barrier.Transition.pResource = m_pColorBuffer[m_FrameIndex].Get();//状態を変える対象のリソース(今回は今フレームのバックバッファ)
+    barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_PRESENT;//今は表示用
+    barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;//これから描画用にするよ
     barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
 
     //リソースバリアの生成
@@ -935,6 +942,7 @@ void App::Render()
 
         m_pCommandList->DrawIndexedInstanced(m_IndexCount, 1, 0,0,0);
     }
+
     //読み込むためのリソースバリアの設定(描画→表示)
     barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
     barrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
