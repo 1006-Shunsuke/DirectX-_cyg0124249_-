@@ -1,7 +1,3 @@
-
-
-
-
 // Include
 #include "App.h"
 #include <cassert>
@@ -917,7 +913,11 @@ void App::Render()
     //レンダーターゲットビューをクリア
     m_pCommandList->ClearRenderTargetView(m_HandleRTV[m_FrameIndex], clearColor, 0, nullptr);
 
-    m_MoveParam.OffsetX = sinf(m_Timer.GetTotalTime()) * 1.0f;
+
+    //パラメータの更新
+    //m_MoveParam.OffsetX = sinf(m_Timer.GetTotalTime()) * 1.0f;
+
+    m_pTransform[m_FrameIndex]->World = XMMatrixTranslation(sinf(m_Timer.GetTotalTime()), 0.0f, 0.0f);//移動行列を作成したものを'World'に代入
 
     //描画処理
     {
