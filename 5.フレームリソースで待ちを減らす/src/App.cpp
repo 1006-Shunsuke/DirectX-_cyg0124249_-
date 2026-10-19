@@ -917,8 +917,10 @@ void App::Render()
     //パラメータの更新
     //m_MoveParam.OffsetX = sinf(m_Timer.GetTotalTime()) * 1.0f;
 
-    m_pTransform[m_FrameIndex]->World = XMMatrixTranslation(sinf(m_Timer.GetTotalTime()), 0.0f, 0.0f);//移動行列を作成したものを'World'に代入
-
+    //ワールド行列を毎フレーム書き換える処理
+    m_pTransform[m_FrameIndex]->World = XMMatrixTranslation(sinf(m_Timer.GetTotalTime()), 0.0f,0.0f);//移動行列を作成したものを'World'に代入
+    //m_pTransform[m_FrameIndex]->World = XMMatrixTranspose(sinf(m))
+    
     //描画処理
     {
         //ポリゴン描画用の処理
