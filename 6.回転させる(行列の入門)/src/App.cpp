@@ -919,9 +919,10 @@ void App::Render()
 
     //ワールド行列を毎フレーム書き換える処理
     const float t = m_Timer.GetTotalTime();
-    XMMATRIX rot = XMMatrixRotationZ(t);//回転処理
+    XMMATRIX rot1 = XMMatrixRotationY(t);//回転処理
+    XMMATRIX rot2 = XMMatrixRotationZ(t);
     XMMATRIX trans = XMMatrixTranslation(sinf(t), 0.0f, 0.0f);//移動処理
-    m_pTransform[m_FrameIndex]->World = rot * trans;
+    m_pTransform[m_FrameIndex]->World = rot1 *  rot2 *trans;
 
     //描画処理
     {
