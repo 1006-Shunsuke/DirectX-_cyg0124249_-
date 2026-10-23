@@ -7,7 +7,9 @@
 
 using namespace DirectX;
 
+
 namespace {
+    //Shaderパスの受け取り
     std::wstring GetExeDirectory()
     {
         wchar_t path[MAX_PATH] = {};
@@ -232,7 +234,7 @@ bool App::InitD3D()
 //1.デバイスの生成
 auto hr = D3D12CreateDevice(
     nullptr,//デフォルトアダプタ
-    D3D_FEATURE_LEVEL_12_2,//機能レベル
+    D3D_FEATURE_LEVEL_11_0,//機能レベル
     IID_PPV_ARGS(m_pDevice.GetAddressOf())
 );
 if (FAILED(hr))return false;
@@ -481,10 +483,14 @@ bool App::OnInit()
     {
         // 頂点データ(中身)
         Vertex vertices[] = {
-            { XMFLOAT3(-1.0f, 1.0f, 0.0f), {0, 255, 255, 255} },//floatとuint8_t
-            { XMFLOAT3(-1.0f, -1.0f, 0.0f),{0, 0, 255, 255} },
-            { XMFLOAT3(1.0f, -1.0f, 0.0f), {0, 0, 255, 255} },
-            { XMFLOAT3(1.0f,  1.0f, 0.0f), {255, 0, 0, 255} },
+            // 赤：z = +0.5（最初は手前）
+            { XMFLOAT3(-0.8f, -0.6f,  0.5f), {255,   0,   0, 255} },
+            { XMFLOAT3(0.0f,  0.8f,  0.5f), {255,   0,   0, 255} },
+            { XMFLOAT3(0.8f, -0.6f,  0.5f), {255,   0,   0, 255} },
+            // 緑：z = -0.5（最初は奥）、少し右下にずらして一部だけ重ねる
+            { XMFLOAT3(-0.4f, -0.9f, -0.5f), {  0, 255,   0, 255} },
+            { XMFLOAT3(0.4f,  0.5f, -0.5f), {  0, 255,   0, 255} },
+            { XMFLOAT3(1.2f, -0.9f, -0.5f), {  0, 255,   0, 255} },
         };
 
         //0-1,リソースの生成
@@ -561,7 +567,7 @@ bool App::OnInit()
     // 頂点データをGPU側が扱える頂点バッファの中に入れてGPUへの渡し方まで用意
     {
 
-        uint32_t indicies[] = { 0,1,2, 0,2,3 };
+        uint32_t indicies[] = { 0,1,2, 3,4,5 };
         m_IndexCount = _countof(indicies);
 
         //1-1,リソースの生成
@@ -985,7 +991,7 @@ void App::Render()
 
     //クリアカラーの設定
     const float value = 0.5f + 0.5f * sinf(m_Timer.GetTotalTime());
-    float clearColor[] = { 0.25f,0.25f,value,value };
+    float clearColor[] = { value,value,value,value };
 
     //レンダーターゲットビューをクリア
     m_pCommandList->ClearRenderTargetView(m_HandleRTV[m_FrameIndex], clearColor, 0, nullptr);
@@ -996,10 +1002,7 @@ void App::Render()
 
     //ワールド行列を毎フレーム書き換える処理
     const float t = m_Timer.GetTotalTime();
-    XMMATRIX rot1 = XMMatrixRotationY(t);//回転処理
-    XMMATRIX rot2 = XMMatrixRotationZ(t);
-    XMMATRIX trans = XMMatrixTranslation(sinf(t), 0.0f, 0.0f);//移動処理
-    m_pTransform[m_FrameIndex]->World = rot1 *  rot2 *trans;
+    m_pTransform[m_FrameIndex]->World = XMMatrixRotationY(t * 0.5f);  // ゆっくり回すと見やすい
 
     //描画処理
     {
