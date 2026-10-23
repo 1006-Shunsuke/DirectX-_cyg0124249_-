@@ -236,7 +236,7 @@ bool App::InitD3D()
 //1.デバイスの生成
 auto hr = D3D12CreateDevice(
     nullptr,//デフォルトアダプタ
-    D3D_FEATURE_LEVEL_12_2,//機能レベル
+    D3D_FEATURE_LEVEL_11_1,//機能レベル
     IID_PPV_ARGS(m_pDevice.GetAddressOf())
 );
 if (FAILED(hr))return false;
@@ -248,8 +248,10 @@ if (FAILED(hr))return false;
     queue.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
     queue.NodeMask = 0;
 
-    hr = m_pDevice->CreateCommandQueue(&queue, IID_PPV_ARGS(&m_pQueue));
-    if (FAILED(hr))return false;
+    hr = m_pDevice->CreateCommandQueue(
+        &queue,
+        IID_PPV_ARGS(m_pQueue.GetAddressOf())
+    );
 }
 //3.Swap Chain
 // 3.1 DXGI Factoryの生成(SwapChainはDXGIの機能)
@@ -323,6 +325,8 @@ SafeRelease(pFactory);
         return false;
     }
 }
+
+//コマンドリストをコマンドキューへ送る
 m_pCommandList->Close();
 
 //5.RTV(ディスクリプタヒープ)
@@ -904,20 +908,21 @@ void App::Render()
     barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
     barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
 
-    //リソースバリアの生成
+    //リソースバリアの生成命令
     m_pCommandList->ResourceBarrier(1, &barrier);
 
-    //レンダーターゲットの設定
+    //レンダーターゲットの設定命令
     m_pCommandList->OMSetRenderTargets(1, &m_HandleRTV[m_FrameIndex], FALSE, nullptr);
 
     //クリアカラーの設定
     const float value = 0.5f + 0.5f * sinf(m_Timer.GetTotalTime());
     float clearColor[] = { 0.25f,value,0.25f,value };
 
-    //レンダーターゲットビューをクリア
+    //レンダーターゲットをクリアカラーの色で塗る命令
     m_pCommandList->ClearRenderTargetView(m_HandleRTV[m_FrameIndex], clearColor, 0, nullptr);
 
     m_MoveParam.OffsetX = sinf(m_Timer.GetTotalTime()) * 1.0f;
+    m_pTransform[m_FrameIndex]->World;
 
     //描画処理
     {
