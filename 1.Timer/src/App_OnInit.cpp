@@ -85,7 +85,7 @@ bool App::CreateVertexBuffer()
     resourceDesc.Width = sizeof(vertices); // Bufferの場合はバッファサイズ,Textureの場合は横幅
     resourceDesc.Height = 1; // Bufferの場合は1,Textureの場合は縦幅
     resourceDesc.DepthOrArraySize = 1; // Bufferの場合は1,Textureの場合は配列数,3次元テクスチャの場合は奥行き
-    resourceDesc.MipLevels = 1; // Textureの場合はミニマップレベル数
+    resourceDesc.MipLevels = 1; // Textureの場合はミップマップレベル数
     resourceDesc.Format = DXGI_FORMAT_UNKNOWN; // Textureの場合はピクセルフォーマット
     resourceDesc.SampleDesc.Count = 1;
     resourceDesc.SampleDesc.Quality = 0; // Textureの場合はマルチサンプルを設定
