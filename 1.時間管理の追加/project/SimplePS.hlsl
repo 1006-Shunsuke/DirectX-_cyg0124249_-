@@ -1,11 +1,11 @@
 struct VSOutput
 {
-    float4 Position : SV_Position;//ˆÊ’uÀ•W
-    float4 Color : COLOR;//’¸“_ƒJƒ‰[
+    float4 Position : SV_Position;//ä½ç½®åº§æ¨™
+    float4 Color : COLOR;//é ‚ç‚¹ã‚«ãƒ©ãƒ¼
 };
 struct PSOutput
 {
-    float4 Color : SV_TARGET0; //ƒsƒNƒZƒ‹ƒJƒ‰[
+    float4 Color : SV_TARGET0; //ãƒ”ã‚¯ã‚»ãƒ«ã‚«ãƒ©ãƒ¼
 };
 
 PSOutput main(VSOutput input)

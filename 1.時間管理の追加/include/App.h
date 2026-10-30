@@ -1,7 +1,6 @@
-//-----------------------------------------------------------------------------
+ï»¿//-----------------------------------------------------------------------------
 // File : App.h
-// Desc : Application Module.
-// Copyright(c) Pocol. All right reserved.
+// Desc : ã‚¢ãƒ—ãƒªã‚±ãƒ¼ã‚·ãƒ§ãƒ³æœ¬ä½“
 //-----------------------------------------------------------------------------
 #pragma once
 
@@ -15,7 +14,7 @@
 #include <wrl/client.h>
 #include <d3dcompiler.h>
 #include <DirectXMath.h>
-#include <Timer.h> // ’Ç‰Á: TimerƒNƒ‰ƒX‚Ìƒwƒbƒ_‚ğƒCƒ“ƒNƒ‹[ƒh
+#include <Timer.h> // Timerã‚¯ãƒ©ã‚¹ã®ãƒ˜ãƒƒãƒ€ã‚’ã‚¤ãƒ³ã‚¯ãƒ«ãƒ¼ãƒ‰
 
 //-----------------------------------------------------------------------------
 // Linker
@@ -36,9 +35,9 @@ using ComPtr = Microsoft::WRL::ComPtr<T>;
 ///////////////////////////////////////////////////////////////////////////////
 struct alignas(256) Transform 
 {
-    DirectX::XMMATRIX   World;      // ƒ[ƒ‹ƒhs—ñ‚Å‚·.
-    DirectX::XMMATRIX   View;       // ƒrƒ…[s—ñ‚Å‚·.
-    DirectX::XMMATRIX   Proj;       // Ë‰es—ñ‚Å‚·.
+    DirectX::XMMATRIX   World;      // ãƒ¯ãƒ¼ãƒ«ãƒ‰è¡Œåˆ—
+    DirectX::XMMATRIX   View;       // ãƒ“ãƒ¥ãƒ¼è¡Œåˆ—
+    DirectX::XMMATRIX   Proj;       // å°„å½±è¡Œåˆ—
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -47,10 +46,10 @@ struct alignas(256) Transform
 template<typename T>
 struct ConstantBufferView
 {
-    D3D12_CONSTANT_BUFFER_VIEW_DESC Desc;               // ’è”ƒoƒbƒtƒ@‚Ì\¬İ’è‚Å‚·.
-    D3D12_CPU_DESCRIPTOR_HANDLE     HandleCPU;          // CPUƒfƒBƒXƒNƒŠƒvƒ^ƒnƒ“ƒhƒ‹‚Å‚·.
-    D3D12_GPU_DESCRIPTOR_HANDLE     HandleGPU;          // GPUƒfƒBƒXƒNƒŠƒvƒ^ƒnƒ“ƒhƒ‹‚Å‚·.
-    T* pBuffer;            // ƒoƒbƒtƒ@æ“ª‚Ö‚Ìƒ|ƒCƒ“ƒ^‚Å‚·.
+    D3D12_CONSTANT_BUFFER_VIEW_DESC Desc;               // å®šæ•°ãƒãƒƒãƒ•ã‚¡ã®æ§‹æˆè¨­å®š
+    D3D12_CPU_DESCRIPTOR_HANDLE     HandleCPU;          // CPUãƒ‡ã‚£ã‚¹ã‚¯ãƒªãƒ—ã‚¿ãƒãƒ³ãƒ‰ãƒ«
+    D3D12_GPU_DESCRIPTOR_HANDLE     HandleGPU;          // GPUãƒ‡ã‚£ã‚¹ã‚¯ãƒªãƒ—ã‚¿ãƒãƒ³ãƒ‰ãƒ«
+    T* pBuffer;            // ãƒãƒƒãƒ•ã‚¡å…ˆé ­ã¸ã®ãƒã‚¤ãƒ³ã‚¿
 };
 
 
@@ -60,18 +59,18 @@ struct ConstantBufferView
 class App
 {
     //=========================================================================
-    // list of friend classes and methods.
+    // ãƒ•ãƒ¬ãƒ³ãƒ‰ã‚¯ãƒ©ã‚¹ãƒ»é–¢æ•°
     //=========================================================================
     /* NOTHING */
 
 public:
     //=========================================================================
-    // public variables.
+    // public å¤‰æ•°
     //=========================================================================
     /* NOTHING */
 
     //=========================================================================
-    // public methods.
+    // public é–¢æ•°
     //=========================================================================
     App(uint32_t width, uint32_t height);
     ~App();
@@ -79,43 +78,43 @@ public:
 
 private:
     //=========================================================================
-    // private variables.
+    // private å¤‰æ•°
     //=========================================================================
-    static const uint32_t FrameCount = 2;   // ƒtƒŒ[ƒ€ƒoƒbƒtƒ@”‚Å‚·.
+    static const uint32_t FrameCount = 2;   // ãƒ•ãƒ¬ãƒ¼ãƒ ãƒãƒƒãƒ•ã‚¡æ•°
 
-    HINSTANCE   m_hInst;        // ƒCƒ“ƒXƒ^ƒ“ƒXƒnƒ“ƒhƒ‹‚Å‚·.
-    HWND        m_hWnd;         // ƒEƒBƒ“ƒhƒEƒnƒ“ƒhƒ‹‚Å‚·.
-    uint32_t    m_Width;        // ƒEƒBƒ“ƒhƒE‚Ì‰¡•‚Å‚·.
-    uint32_t    m_Height;       // ƒEƒBƒ“ƒhƒE‚Ìc•‚Å‚·.
+    HINSTANCE   m_hInst;        // ã‚¤ãƒ³ã‚¹ã‚¿ãƒ³ã‚¹ãƒãƒ³ãƒ‰ãƒ«
+    HWND        m_hWnd;         // ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ãƒãƒ³ãƒ‰ãƒ«
+    uint32_t    m_Width;        // ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã®æ¨ªå¹…
+    uint32_t    m_Height;       // ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã®ç¸¦å¹…
 
-    ComPtr<ID3D12Device>                   m_pDevice;                      // ƒfƒoƒCƒX
-    ComPtr<ID3D12CommandQueue>             m_pQueue;                       // ƒRƒ}ƒ“ƒhƒLƒ…[
-    ComPtr<IDXGISwapChain3>                m_pSwapChain;                   // ƒXƒƒbƒvƒ`ƒFƒCƒ“
-    ComPtr<ID3D12Resource>                 m_pColorBuffer[FrameCount];     // ƒJƒ‰[ƒoƒbƒtƒ@
-    ComPtr<ID3D12CommandAllocator>         m_pCommandAllocator[FrameCount];    // ƒRƒ}ƒ“ƒhƒAƒƒP[ƒ^
-    ComPtr<ID3D12GraphicsCommandList>      m_pCommandList;                     // ƒRƒ}ƒ“ƒhƒŠƒXƒg
-    ComPtr<ID3D12DescriptorHeap>           m_pHeapRTV;                     // ƒfƒBƒXƒNƒŠƒvƒ^ƒq[ƒv(ƒŒƒ“ƒ_[ƒ^[ƒQƒbƒgƒrƒ…[).
-    ComPtr<ID3D12Fence>                    m_pFence;                       // ƒtƒFƒ“ƒX
-    ComPtr<ID3D12DescriptorHeap>           m_pHeapCBV;                     // ƒfƒBƒXƒNƒŠƒvƒ^ƒq[ƒv(’è”ƒoƒbƒtƒ@ƒrƒ…[EƒVƒF[ƒ_ƒŠƒ\[ƒXƒrƒ…[EƒAƒ“ƒI[ƒ_[ƒhƒAƒNƒZƒXƒrƒ…[)
-    ComPtr<ID3D12Resource>                 m_pVB;                          // ’¸“_ƒoƒbƒtƒ@
-    ComPtr<ID3D12Resource>                 m_pCB[FrameCount];              // ’è”ƒoƒbƒtƒ@
-    ComPtr<ID3D12RootSignature>            m_pRootSignature;               // ƒ‹[ƒgƒVƒOƒjƒ`ƒƒ
-    ComPtr<ID3D12PipelineState>            m_pPSO;                         // ƒpƒCƒvƒ‰ƒCƒ“ƒXƒe[ƒg
+    ComPtr<ID3D12Device>                   m_pDevice;                      // ãƒ‡ãƒã‚¤ã‚¹
+    ComPtr<ID3D12CommandQueue>             m_pQueue;                       // ã‚³ãƒãƒ³ãƒ‰ã‚­ãƒ¥ãƒ¼
+    ComPtr<IDXGISwapChain3>                m_pSwapChain;                   // ã‚¹ãƒ¯ãƒƒãƒ—ãƒã‚§ã‚¤ãƒ³
+    ComPtr<ID3D12Resource>                 m_pColorBuffer[FrameCount];     // ã‚«ãƒ©ãƒ¼ãƒãƒƒãƒ•ã‚¡
+    ComPtr<ID3D12CommandAllocator>         m_pCommandAllocator[FrameCount];    // ã‚³ãƒãƒ³ãƒ‰ã‚¢ãƒ­ã‚±ãƒ¼ã‚¿
+    ComPtr<ID3D12GraphicsCommandList>      m_pCommandList;                     // ã‚³ãƒãƒ³ãƒ‰ãƒªã‚¹ãƒˆ
+    ComPtr<ID3D12DescriptorHeap>           m_pHeapRTV;                     // ãƒ‡ã‚£ã‚¹ã‚¯ãƒªãƒ—ã‚¿ãƒ’ãƒ¼ãƒ—ï¼šãƒ¬ãƒ³ãƒ€ãƒ¼ã‚¿ãƒ¼ã‚²ãƒƒãƒˆãƒ“ãƒ¥ãƒ¼ç”¨
+    ComPtr<ID3D12Fence>                    m_pFence;                       // ãƒ•ã‚§ãƒ³ã‚¹
+    ComPtr<ID3D12DescriptorHeap>           m_pHeapCBV;                     // ãƒ‡ã‚£ã‚¹ã‚¯ãƒªãƒ—ã‚¿ãƒ’ãƒ¼ãƒ—ï¼šCBVãƒ»SRVãƒ»UAVç”¨
+    ComPtr<ID3D12Resource>                 m_pVB;                          // é ‚ç‚¹ãƒãƒƒãƒ•ã‚¡
+    ComPtr<ID3D12Resource>                 m_pCB[FrameCount];              // å®šæ•°ãƒãƒƒãƒ•ã‚¡
+    ComPtr<ID3D12RootSignature>            m_pRootSignature;               // ãƒ«ãƒ¼ãƒˆã‚·ã‚°ãƒ‹ãƒãƒ£
+    ComPtr<ID3D12PipelineState>            m_pPSO;                         // ãƒ‘ã‚¤ãƒ—ãƒ©ã‚¤ãƒ³ã‚¹ãƒ†ãƒ¼ãƒˆ
 
-    HANDLE                          m_FenceEvent;                   // ƒtƒFƒ“ƒXƒCƒxƒ“ƒg
-    uint64_t                        m_FenceCounter[FrameCount];     // ƒtƒFƒ“ƒXƒJƒEƒ“ƒ^[
-    uint32_t                        m_FrameIndex;                   // ƒtƒŒ[ƒ€”Ô†
-    D3D12_CPU_DESCRIPTOR_HANDLE     m_HandleRTV[FrameCount];        // CPUƒfƒBƒXƒNƒŠƒvƒ^(ƒŒƒ“ƒ_[ƒ^[ƒQƒbƒgƒrƒ…[)
-    D3D12_VERTEX_BUFFER_VIEW        m_VBV;                          // ’¸“_ƒoƒbƒtƒ@ƒrƒ…[
-    D3D12_VIEWPORT                  m_Viewport;                     // ƒrƒ…[ƒ|[ƒg
-    D3D12_RECT                      m_Scissor;                      // ƒVƒU[‹éŒ`
-    ConstantBufferView<Transform>   m_CBV[FrameCount];              // ’è”ƒoƒbƒtƒ@ƒrƒ…[
+    HANDLE                          m_FenceEvent;                   // ãƒ•ã‚§ãƒ³ã‚¹ã‚¤ãƒ™ãƒ³ãƒˆ
+    uint64_t                        m_FenceCounter[FrameCount];     // ãƒ•ã‚§ãƒ³ã‚¹ã‚«ã‚¦ãƒ³ã‚¿ãƒ¼
+    uint32_t                        m_FrameIndex;                   // ãƒ•ãƒ¬ãƒ¼ãƒ ç•ªå·
+    D3D12_CPU_DESCRIPTOR_HANDLE     m_HandleRTV[FrameCount];        // ãƒ¬ãƒ³ãƒ€ãƒ¼ã‚¿ãƒ¼ã‚²ãƒƒãƒˆãƒ“ãƒ¥ãƒ¼ã®CPUãƒ‡ã‚£ã‚¹ã‚¯ãƒªãƒ—ã‚¿
+    D3D12_VERTEX_BUFFER_VIEW        m_VBV;                          // é ‚ç‚¹ãƒãƒƒãƒ•ã‚¡ãƒ“ãƒ¥ãƒ¼
+    D3D12_VIEWPORT                  m_Viewport;                     // ãƒ“ãƒ¥ãƒ¼ãƒãƒ¼ãƒˆ
+    D3D12_RECT                      m_Scissor;                      // ã‚·ã‚¶ãƒ¼çŸ©å½¢
+    ConstantBufferView<Transform>   m_CBV[FrameCount];              // å®šæ•°ãƒãƒƒãƒ•ã‚¡ãƒ“ãƒ¥ãƒ¼
     float                           m_RotateAngle;
 
-    Timer                           m_Timer; // ’Ç‰Á: TimerƒNƒ‰ƒX‚Ìƒƒ“ƒo•Ï”
+    Timer                           m_Timer; // Timerã‚¯ãƒ©ã‚¹ã®ãƒ¡ãƒ³ãƒå¤‰æ•°
 
     //=========================================================================
-    // private methods.
+    // private é–¢æ•°
     //=========================================================================
     bool InitApp();
     void TermApp();

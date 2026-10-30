@@ -1,27 +1,27 @@
-#include "Timer.h"
+ï»¿#include "Timer.h"
 
 void Timer::Init()
 {
-	// ü”g”i1•bŠÔ‚É‰½‰ñƒJƒEƒ“ƒg‚·‚é‚©j‚ğæ“¾
+	// å‘¨æ³¢æ•°ã‚’å–å¾—ã™ã‚‹ã€‚1ç§’é–“ã«ä½•å›ã‚«ã‚¦ãƒ³ãƒˆã™ã‚‹ã‹ã‚’è¡¨ã™
 	QueryPerformanceFrequency(&m_Frequency);
-	// ŠJn‚ÌƒJƒEƒ“ƒg‚ğæ“¾
+	// é–‹å§‹æ™‚ã®ã‚«ã‚¦ãƒ³ãƒˆã‚’å–å¾—
 	QueryPerformanceCounter(&m_preCount);
 }
 
 void Timer::Tick()
 {
-	// 1•bŠÔ‚É‰½‰ñƒJƒEƒ“ƒg‚·‚é‚©‚ğæ“¾
+	// 1ç§’é–“ã«ä½•å›ã‚«ã‚¦ãƒ³ãƒˆã™ã‚‹ã‹ã‚’å–å¾—
 	LARGE_INTEGER currentCount;
 	QueryPerformanceCounter(&currentCount);
 
-	// Œo‰ßŠÔ‚ğŒvZ
+	// çµŒéæ™‚é–“ã‚’è¨ˆç®—
 	const LONGLONG elapsedCount = currentCount.QuadPart - m_preCount.QuadPart;
 	m_preCount = currentCount;
 
-	// ü”g”‚ğg‚Á‚Ä•b’PˆÊ‚É•ÏŠ·
+	// å‘¨æ³¢æ•°ã‚’ä½¿ã£ã¦ç§’å˜ä½ã«å¤‰æ›
 	double DeltaSeconds = static_cast<double>(elapsedCount) / static_cast<double>(m_Frequency.QuadPart);
 
-	// Œo‰ßŠÔ‚ğXV
+	// çµŒéæ™‚é–“ã‚’æ›´æ–°
 	m_DeltaSeconds = static_cast<float>(DeltaSeconds);
 	m_TotalSeconds += DeltaSeconds;
 }

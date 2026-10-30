@@ -1,15 +1,15 @@
-#pragma once
+ï»¿#pragma once
 #include <windows.h>
 
 class Timer {
 public:
 	void Init();
-	void Tick();//ƒtƒŒ[ƒ€XV
-	float GetDeltaTime() const { return m_DeltaSeconds; }//‘OƒtƒŒ[ƒ€‚©‚ç‚ÌŒo‰ßŠÔ‚ğæ“¾
-	float GetTotalTime() const { return m_TotalSeconds; }//ƒAƒvƒŠƒP[ƒVƒ‡ƒ“ŠJn‚©‚ç‚ÌŒo‰ßŠÔ‚ğæ“¾
+	void Tick();//ãƒ•ãƒ¬ãƒ¼ãƒ æ›´æ–°
+	float GetDeltaTime() const { return m_DeltaSeconds; }//å‰ãƒ•ãƒ¬ãƒ¼ãƒ ã‹ã‚‰ã®çµŒéæ™‚é–“ã‚’å–å¾—
+	float GetTotalTime() const { return m_TotalSeconds; }//ã‚¢ãƒ—ãƒªã‚±ãƒ¼ã‚·ãƒ§ãƒ³é–‹å§‹ã‹ã‚‰ã®çµŒéæ™‚é–“ã‚’å–å¾—
 private:
-	LARGE_INTEGER m_Frequency{};//ü”g”
-	LARGE_INTEGER m_preCount{};//‘OƒtƒŒ[ƒ€‚ÌƒJƒEƒ“ƒg
-	float m_DeltaSeconds = 0.0f;//‘O‰ñ‚©‚ç‚ÌŒo‰ßŠÔ
-	double m_TotalSeconds = 0.0f;//‹N“®‚©‚ç‚ÌŒo‰ßŠÔ
+	LARGE_INTEGER m_Frequency{};//å‘¨æ³¢æ•°
+	LARGE_INTEGER m_preCount{};//å‰ãƒ•ãƒ¬ãƒ¼ãƒ ã®ã‚«ã‚¦ãƒ³ãƒˆ
+	float m_DeltaSeconds = 0.0f;//å‰å›ã‹ã‚‰ã®çµŒéæ™‚é–“
+	float m_TotalSeconds = 0.0f;//èµ·å‹•ã‹ã‚‰ã®çµŒéæ™‚é–“
 };

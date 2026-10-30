@@ -1,0 +1,23 @@
+# Visual Studio などのエディタに、このリポジトリの書式を伝える設定ファイル
+# (CODING_STYLE.md の「書式」「文字コード」と同じ内容)
+root = true
+
+# すべてのファイル共通: スペース4つでインデント、最後に改行を入れる
+[*]
+indent_style = space
+indent_size = 4
+insert_final_newline = true
+
+# C++: BOM 付き UTF-8(BOM が無いと Visual Studio が Shift-JIS として読むため)
+[*.{h,hpp,cpp,inl}]
+charset = utf-8-bom
+end_of_line = crlf
+
+# HLSL: BOM 無し UTF-8(fxc は BOM を読めないため)
+[*.{hlsl,hlsli}]
+charset = utf-8
+end_of_line = crlf
+
+# Markdown: BOM 無し UTF-8(GitHub での表示用)
+[*.md]
+charset = utf-8

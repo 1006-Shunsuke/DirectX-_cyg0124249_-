@@ -1,0 +1,38 @@
+# ===== Visual Studio が自動で作るもの =====
+.vs/
+x64/
+Win32/
+Debug/
+Release/
+*.user
+*.suo
+*.VC.db
+*.VC.opendb
+
+# ===== ビルド成果物 =====
+*.obj
+# ただし 3D モデルの .obj(res フォルダ内)は必要なので除外しない
+!**/res/**/*.obj
+*.pdb
+*.ilk
+*.idb
+*.iobj
+*.ipdb
+*.exe
+*.tlog
+*.log
+*.cso
+
+# ===== 外部ライブラリ(復元できるのでコミットしない) =====
+# NuGet: Visual Studio が packages.config から自動で復元する
+packages/
+# vcpkg: vcpkg.json から自動で復元する
+vcpkg_installed/
+
+# ===== 実行時に自動で作られるファイル =====
+# ImGui のウィンドウ位置の保存ファイル
+imgui.ini
+
+# ===== 作業用の一時ファイル =====
+*.bak
+_backup*

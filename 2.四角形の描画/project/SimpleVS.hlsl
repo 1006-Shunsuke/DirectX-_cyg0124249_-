@@ -1,17 +1,17 @@
 struct VSInput
 {
-    float3 Position : POSITION;//ˆÊ’uÀ•W(x,y,z)
-    float4 Color : COLOR;//’¸“_ƒJƒ‰[
+    float3 Position : POSITION;// ä½ç½®åº§æ¨™ x, y, z
+    float4 Color : COLOR;//é ‚ç‚¹ã‚«ãƒ©ãƒ¼
 };
 struct VSOutput
 {
-    float4 Position:SV_POSITION;//ˆÊ’uÀ•W
-    float4 Color : COLOR;//’¸“_ƒJƒ‰[
+    float4 Position:SV_POSITION;//ä½ç½®åº§æ¨™
+    float4 Color : COLOR;//é ‚ç‚¹ã‚«ãƒ©ãƒ¼
 };
-//’è”ƒoƒbƒtƒ@
+//å®šæ•°ãƒãƒƒãƒ•ã‚¡
 cbuffer Transform : register(b0)
 {
-    //‚»‚ê‚¼‚ês—ñ•ÏŠ·
+    //ãã‚Œãã‚Œè¡Œåˆ—å¤‰æ›
     float4x4 World:packoffset(c0);
     float4x4 View:packoffset(c4);
     float4x4 Proj:packoffset(c8);
