@@ -137,7 +137,7 @@
     <ClCompile Include="..\imgui\imgui_impl_win32.cpp" />
     <ClCompile Include="..\imgui\imgui_tables.cpp" />
     <ClCompile Include="..\imgui\imgui_widgets.cpp" />
-    <ClCompile Include="..\include\Timer.cpp" />
+    <ClCompile Include="..\src\Timer.cpp" />
     <ClCompile Include="..\src\App_Init.cpp" />
     <ClCompile Include="..\src\App_Loop.cpp" />
     <ClCompile Include="..\src\App_OnInit.cpp" />

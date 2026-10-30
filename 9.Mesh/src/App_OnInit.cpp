@@ -3,18 +3,17 @@
 // Desc : 描画に使うGPUリソースの初期化。OnInit
 //-----------------------------------------------------------------------------
 #include "App.h"
-#include <cassert>
 #include <cstdio>
 #include <string>
-#include <Timer.h>
 #include <ResourceUploadBatch.h>    // DirectXTK12：テクスチャをGPUへ転送する
 #include <DDSTextureLoader.h>       // DirectXTK12：DDS画像を読み込む
 
 using namespace DirectX;
 
 
-namespace {
-    //Shaderパスの受け取り
+namespace
+{
+    // Shaderパスの受け取り
     std::wstring GetExeDirectory()
     {
         wchar_t path[MAX_PATH] = {};
@@ -27,23 +26,33 @@ namespace {
     // VSから実行すると作業フォルダは project\ 、exe直接なら x64\Debug\ になるため
     bool SearchFilePath(const wchar_t* filename, std::wstring& result)
     {
-        auto exists = [](const std::wstring& path) {
+        auto exists = [](const std::wstring& path)
+        {
             DWORD attr = GetFileAttributesW(path.c_str());
             return attr != INVALID_FILE_ATTRIBUTES && !(attr & FILE_ATTRIBUTE_DIRECTORY);
         };
-        if (exists(filename)) { result = filename; return true; }
+        if (exists(filename))
+        {
+            result = filename;
+            return true;
+        }
 
         std::wstring dir = GetExeDirectory();
         for (int i = 0; i < 5; ++i)   // 最大5階層上まで
         {
-            if (exists(dir + filename)) { result = dir + filename; return true; }
+            if (exists(dir + filename))
+            {
+                result = dir + filename;
+                return true;
+            }
             dir += L"..\\";
         }
         return false;
     }
 }
 
-namespace {
+namespace
+{
     // どこで失敗したかと HRESULT を表示する
     void ShowError(const wchar_t* where, HRESULT hr)
     {
@@ -53,649 +62,702 @@ namespace {
     }
 }
 
-// 頂点の型は Mesh.h の MeshVertex を使う。位置・法線・UV・接線を持つ
-
-//--------------------------------------------------------
-//   「描画に必要なGPUリソースを一通り作る」初期化関数
-//--------------------------------------------------------
-// 
-// 描画に必要なデータは「頂点情報」→「インデックス情報」→「定数バッファ情報」→「ルートシグニチャ情報」→「パイプラインステート情報」の順に作る必要がある
-// データ自体は最初頂点データがCPUにあり、それをシェーダーが扱えるようにするために、頂点データ本体はGPU側が読み取れるような「リソース」,そのリソースの使い方として「ディスクリプタ」を作る必要がある
-// そのリソース自体は「ヒープ」というGPUがアクセスできるメモリ上の「空の入れ物」に入れる必要がある.「ディスクリプタ」もディスクリプタヒープという空の配列に入れる必要がある
-// 
-// 
 //-----------------------------------------------------------------------------
-//      初期化時の処理
+// 初期化時の処理
+// 描画に必要な GPU リソースを、下の 1〜10 の順番に作る
 //-----------------------------------------------------------------------------
 bool App::OnInit()
 {
-    // 0-0.メッシュファイルの読み込み
-    // assimp でモデルファイルを読み、全メッシュの頂点・インデックスを1つの配列にまとめる
-    // この vertices / indices を、下の「0.頂点バッファ」「1.インデックスバッファ」にコピーする
-    std::vector<MeshVertex> vertices;   // 全メッシュの頂点
-    std::vector<uint32_t>   indices;    // 全メッシュのインデックス
+    // どれかが失敗したら、そこで中断する
+    std::vector<MeshVertex> vertices;       // 全メッシュの頂点。1 で読み込み、2 で使う
+    std::vector<uint32_t>   indices;        // 全メッシュのインデックス。1 で読み込み、3 で使う
+
+    if (!LoadMeshData(vertices, indices))   { return false; }   // 1. メッシュファイルの読み込み
+    if (!CreateVertexBuffer(vertices))      { return false; }   // 2. 頂点バッファ
+    if (!CreateIndexBuffer(indices))        { return false; }   // 3. インデックスバッファ
+    if (!CreateCbvSrvHeap())                { return false; }   // 4. 定数バッファとテクスチャ用のディスクリプタヒープ
+    if (!CreateConstantBuffers())           { return false; }   // 5. 定数バッファ
+    if (!LoadTexture())                     { return false; }   // 6. テクスチャと SRV
+    if (!CreateRootSignature())             { return false; }   // 7. ルートシグニチャ
+    if (!CreateDepthBuffer())               { return false; }   // 8. 深度バッファ
+    if (!CreatePipelineState())             { return false; }   // 9. パイプラインステート
+    InitViewport();                                             // 10. ビューポートとシザー矩形
+
+    return true;
+}
+
+//-----------------------------------------------------------------------------
+// 1. メッシュファイルの読み込み
+// assimp でモデルファイルを読み、全メッシュの頂点・インデックスを1つの配列にまとめる
+// この vertices / indices を、下の「0.頂点バッファ」「1.インデックスバッファ」にコピーする
+//-----------------------------------------------------------------------------
+bool App::LoadMeshData(std::vector<MeshVertex>& vertices, std::vector<uint32_t>& indices)
+{
+    // 1-1 ファイルを探す。探し方はテクスチャと同じ
+    std::wstring meshPath;
+    if (!SearchFilePath(L"res\\model\\sphere.obj", meshPath))
     {
-        // 0-0-1 ファイルを探す。探し方はテクスチャと同じ
-        std::wstring meshPath;
-        if (!SearchFilePath(L"res\\model\\sphere.obj", meshPath))
-        {
-            MessageBoxW(nullptr, L"res\\model\\sphere.obj が見つかりません", L"メッシュ読み込み失敗", MB_OK);
-            return false;
-        }
-
-        // 0-0-2 Mesh.cpp の LoadMesh で読み込む
-        std::vector<Mesh>     meshes;
-        std::vector<Material> materials;    // 今はまだ使わない。ライティングの章で使う
-        if (!LoadMesh(meshPath.c_str(), meshes, materials))
-        {
-            // 失敗の理由は Visual Studio の「出力」ウィンドウに [LoadMesh] として出る
-            MessageBoxW(nullptr, meshPath.c_str(), L"メッシュ読み込み失敗", MB_OK);
-            return false;
-        }
-
-        // 0-0-3 全メッシュを1つの配列に連結し、メッシュごとの描画範囲を覚える
-        m_DrawRanges.clear();
-        for (const auto& mesh : meshes)
-        {
-            DrawRange range = {};
-            range.IndexCount = static_cast<UINT>(mesh.Indices.size());
-            range.StartIndex = static_cast<UINT>(indices.size());   // ここまでに入れたインデックスの数 = このメッシュの開始位置
-            range.BaseVertex = static_cast<INT>(vertices.size());   // ここまでに入れた頂点の数 = このメッシュの頂点の開始位置
-            m_DrawRanges.push_back(range);
-
-            // 配列の後ろに追加していく
-            vertices.insert(vertices.end(), mesh.Vertices.begin(), mesh.Vertices.end());
-            indices.insert(indices.end(), mesh.Indices.begin(), mesh.Indices.end());
-        }
-
-        if (vertices.empty() || indices.empty())
-        {
-            MessageBoxW(nullptr, L"メッシュに三角形がありません", L"メッシュ読み込み失敗", MB_OK);
-            return false;
-        }
+        MessageBoxW(nullptr, L"res\\model\\sphere.obj が見つかりません", L"メッシュ読み込み失敗", MB_OK);
+        return false;
     }
 
-    // 0. 頂点バッファの生成：頂点情報を入れるリソース
-    // 本来頂点情報はCPUにあるが、GPUが扱えるようにするために、GPU側が読み取れるような「リソース」を作る必要がある
-    // 頂点シェーダの入力データに合うように頂点バッファを作成する。
-    // GPUが読むとき、必要な情報は「アドレス・サイズ・ストライド」のみであるため、ディスクリプタは不要で「ビュー」と呼ばれる構造体を作るだけでよい
-    // 頂点データをGPU側が扱える頂点バッファの中に入れてGPUへの渡し方まで用意
-    //ここではGPU側では何の処理も行わない
+    // 1-2 Mesh.cpp の LoadMesh で読み込む
+    std::vector<Mesh>     meshes;
+    std::vector<Material> materials;    // 今はまだ使わない。ライティングの章で使う
+    if (!LoadMesh(meshPath.c_str(), meshes, materials))
     {
-        // 頂点データの中身は 0-0 で読み込んだ vertices
-        // バッファの大きさ = 頂点1個のサイズ × 頂点の数
-        const auto vbSize = static_cast<UINT>(sizeof(MeshVertex) * vertices.size());
-
-        //0-1,リソースの生成
-
-        // ヒーププロパティ
-        //どの種類のメモリに置くか,本件だとCPUから書ける実メモリに置く
-        D3D12_HEAP_PROPERTIES prop = {};
-        prop.Type = D3D12_HEAP_TYPE_UPLOAD;//GPUへ
-        prop.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;//お任せ
-        prop.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;//お任せ
-        prop.CreationNodeMask = 1;//単一GPU
-        prop.VisibleNodeMask = 1;//単一GPU
-
-        // リソースの設定：中身はまだ空の入れ物
-        // この場合のメモリはGPUがアクセスできるメモリ上の「空の入れ物」
-        //確保するメモリの「形・サイズ・種類」をドライバに伝える
-        D3D12_RESOURCE_DESC desc = {};
-        desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;//バッファ
-        desc.Alignment = 0;
-        desc.Width = vbSize;//Bufferの場合はバッファサイズ,Textureの場合は横幅
-        desc.Height = 1;//Bufferの場合は1,Textureの場合は縦幅
-        desc.DepthOrArraySize = 1;//Bufferの場合は1,Textureの場合は配列数,3次元テクスチャの場合は奥行き
-        desc.MipLevels = 1;//Textureの場合はミニマップレベル数
-        desc.Format = DXGI_FORMAT_UNKNOWN;//Textureの場合はピクセルフォーマット
-        desc.SampleDesc.Count = 1;
-        desc.SampleDesc.Quality = 0;//Textureの場合はマルチサンプルを設定
-        desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;//レイアウト
-        desc.Flags = D3D12_RESOURCE_FLAG_NONE;
-
-        // 生成
-        // 設定をもとに実際にGPUメモリを確保し、リソースを作る
-        // このCreateCommittedResource関数は、ドライバを介してメモリを確保しているため、GPUからもアクセスできるようになっている
-        auto hr = m_pDevice->CreateCommittedResource(
-            &prop,
-            D3D12_HEAP_FLAG_NONE,
-            &desc,
-            D3D12_RESOURCE_STATE_GENERIC_READ,//リソースの初期状態
-            nullptr,
-            IID_PPV_ARGS(m_pVB.GetAddressOf()));//メモリの確保とリソースの生成
-        if (FAILED(hr))
-        {
-            ShowError(L"0-1 頂点バッファ生成", hr);
-            return false;
-        }
-
-
-        //0-2頂点データを書き込む
-        //マッピング
-        //m_pVBはリソースを操作するためのオブジェクトを指すポインタ
-        //確保した空メモリにCPU側の頂点データを実際に書き込む
-
-        void* ptr = nullptr;
-        hr = m_pVB->Map(0, nullptr, &ptr);
-        if (FAILED(hr))
-        {
-            ShowError(L"0-2 頂点バッファMap", hr);
-            return false;
-        }
-
-        // 頂点データをマッピング先に設定
-        memcpy(ptr, vertices.data(), vbSize);
-
-        // マッピング解除
-        m_pVB->Unmap(0, nullptr);
-
-        //0-3View構造体を作成
-        // 頂点バッファビューの設定。ただし、ビュー自体はGPU側から読めない
-        m_VBV.BufferLocation = m_pVB->GetGPUVirtualAddress();//GPU仮想アドレス
-        m_VBV.SizeInBytes = vbSize;//頂点バッファ全体のサイズ
-        m_VBV.StrideInBytes = static_cast<UINT>(sizeof(MeshVertex));//1頂点あたりのサイズ
-    }
-    //1.インデックスバッファの生成
-    // 頂点シェーダの入力データに合うように頂点バッファを作成する。
-    // 頂点データをGPU側が扱える頂点バッファの中に入れてGPUへの渡し方まで用意
-    {
-
-        // インデックスデータは 0-0 で読み込んだ indices
-        const auto ibSize = static_cast<UINT>(sizeof(uint32_t) * indices.size());
-        m_IndexCount = static_cast<UINT>(indices.size());   // 全メッシュ合計のインデックス数
-
-        //1-1,リソースの生成
-
-        // ヒーププロパティ
-        D3D12_HEAP_PROPERTIES prop = {};
-        prop.Type = D3D12_HEAP_TYPE_UPLOAD;//GPUへ
-        prop.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;//お任せ
-        prop.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;//お任せ
-        prop.CreationNodeMask = 1;//単一GPU
-        prop.VisibleNodeMask = 1;//単一GPU
-
-        // リソースの設定
-        D3D12_RESOURCE_DESC desc = {};
-        desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;//バッファ
-        desc.Alignment = 0;
-        desc.Width = ibSize;
-        desc.Height = 1;
-        desc.DepthOrArraySize = 1;
-        desc.MipLevels = 1;
-        desc.Format = DXGI_FORMAT_UNKNOWN;
-        desc.SampleDesc.Count = 1;
-        desc.SampleDesc.Quality = 0;
-        desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-        desc.Flags = D3D12_RESOURCE_FLAG_NONE;
-
-        // 生成
-        auto hr = m_pDevice->CreateCommittedResource(
-            &prop,
-            D3D12_HEAP_FLAG_NONE,
-            &desc,
-            D3D12_RESOURCE_STATE_GENERIC_READ,//リソースの初期状態
-            nullptr,
-            IID_PPV_ARGS(m_pIB.GetAddressOf()));
-        if (FAILED(hr))
-        {
-            ShowError(L"1-1 インデックスバッファ生成", hr);
-            return false;
-        }
-
-
-        //1-2頂点データを書き込む
-        //マッピング
-
-        void* ptr = nullptr;
-        hr = m_pIB->Map(0, nullptr, &ptr);
-        if (FAILED(hr))
-        {
-            ShowError(L"1-2 インデックスバッファMap", hr);
-            return false;
-        }
-
-        // 頂点データをマッピング先に設定
-        memcpy(ptr, indices.data(), ibSize);
-
-        // マッピング解除
-        m_pIB->Unmap(0, nullptr);
-
-        //1-3View構造体を作成
-        // インデックスバッファビューの設定
-        m_IBV.BufferLocation = m_pIB->GetGPUVirtualAddress();//GPU仮想アドレス
-        m_IBV.Format = DXGI_FORMAT_R32_UINT;// インデックス1個の型：uint32_t
-        m_IBV.SizeInBytes = ibSize;//インデックスバッファ全体のサイズ
+        // 失敗の理由は Visual Studio の「出力」ウィンドウに [LoadMesh] として出る
+        MessageBoxW(nullptr, meshPath.c_str(), L"メッシュ読み込み失敗", MB_OK);
+        return false;
     }
 
-    //2.定数バッファとテクスチャの生成
-    // CBV_SRV_UAV のディスクリプタヒープを1つ作り、次のように並べる
-    //   [0] CBV : m_pCB[0] フレーム0用の Transform  → b0
-    //   [1] CBV : m_pCB[1] フレーム1用の Transform  → b0
-    //   [2] SRV : m_pTexture                          → t0
+    // 1-3 全メッシュを1つの配列に連結し、メッシュごとの描画範囲を覚える
+    m_DrawRanges.clear();
+    for (const auto& mesh : meshes)
     {
-        // 2.0 1スロット分のバイト数。GPUによって違うので必ず問い合わせる
-        // CBVとSRVで確保する1スロットのサイズは変わらないので,CBVとSRVは同じディスクリプタに置くことができる
-        const auto incSize = m_pDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+        DrawRange range = {};
+        range.IndexCount = static_cast<UINT>(mesh.Indices.size());
+        range.StartIndex = static_cast<UINT>(indices.size());   // ここまでに入れたインデックスの数 = このメッシュの開始位置
+        range.BaseVertex = static_cast<INT>(vertices.size());   // ここまでに入れた頂点の数 = このメッシュの頂点の開始位置
+        m_DrawRanges.push_back(range);
 
-        // 2.1 ディスクリプタヒープの生成
-        {
-            D3D12_DESCRIPTOR_HEAP_DESC desc = {};
-            desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-            desc.NumDescriptors = FrameCount + 1;                 // CBV×2 + SRV×1
-            desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE; // シェーダーから見えるヒープにする。ここがRTV・DSVとの違い
-            desc.NodeMask = 0;
-
-            auto hr = m_pDevice->CreateDescriptorHeap(&desc, IID_PPV_ARGS(m_pHeapCBV_SRV_UAV.GetAddressOf()));
-            if (FAILED(hr))
-            {
-                ShowError(L"2.1 CBV_SRV_UAVヒープ生成", hr);
-                return false;
-            }
-        }
-
-        //2.2 ヒーププロパティ
-        D3D12_HEAP_PROPERTIES prop = {};
-        prop.Type = D3D12_HEAP_TYPE_UPLOAD;                      // CPUから書けてGPUが読めるメモリ
-        prop.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
-        prop.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
-        prop.CreationNodeMask = 1;
-        prop.VisibleNodeMask = 1;
-
-        // 2.3 リソースの設定。GPUから見えるメモリの塊で、中身はただのバイト列
-        D3D12_RESOURCE_DESC desc = {};
-        desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-        desc.Alignment = 0;
-        desc.Width = sizeof(Transform);                          // alignas(256) なので256の倍数
-        desc.Height = 1;
-        desc.DepthOrArraySize = 1;
-        desc.MipLevels = 1;
-        desc.Format = DXGI_FORMAT_UNKNOWN;
-        desc.SampleDesc.Count = 1;
-        desc.SampleDesc.Quality = 0;
-        desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-        desc.Flags = D3D12_RESOURCE_FLAG_NONE;
-
-        //2.4 カメラ設定
-        auto eyePos = XMVectorSet(0.0f, 0.0f, 5.0f, 0.0f);
-        auto targetPos = XMVectorZero();
-        auto upward = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
-        constexpr auto fovY = XMConvertToRadians(37.5f);
-        auto aspect = static_cast<float>(m_Width) / static_cast<float>(m_Height);
-
-        // 2.5 定数バッファとCBVをフレームの数だけ作る
-        for (auto i = 0u; i < FrameCount; ++i)
-        {
-            // 2.5-1 リソースを作成してメモリを確保する
-            auto hr = m_pDevice->CreateCommittedResource(
-                &prop,
-                D3D12_HEAP_FLAG_NONE,
-                &desc,
-                D3D12_RESOURCE_STATE_GENERIC_READ,
-                nullptr,
-                IID_PPV_ARGS(m_pCB[i].GetAddressOf()));
-            if (FAILED(hr))
-            {
-                ShowError(L"2.5-1 定数バッファ生成", hr);
-                return false;
-            }
-
-            // 2.5-2 CBVをヒープの i 番目に書き込む。CBVは定数バッファの読み方の説明書きにあたる
-            auto handleCPU = m_pHeapCBV_SRV_UAV->GetCPUDescriptorHandleForHeapStart();
-            handleCPU.ptr += incSize * i;
-
-            D3D12_CONSTANT_BUFFER_VIEW_DESC cbv = {};
-            cbv.BufferLocation = m_pCB[i]->GetGPUVirtualAddress(); // どのバッファか
-            cbv.SizeInBytes = static_cast<UINT>(desc.Width);       // バイト数。256の倍数でなければならない
-            m_pDevice->CreateConstantBufferView(&cbv, handleCPU);
-
-            // 2.5-3 マッピング。CPUから書き込めるポインタを持ち続ける
-            hr = m_pCB[i]->Map(0, nullptr, reinterpret_cast<void**>(&m_pTransform[i]));
-            if (FAILED(hr))
-            {
-                ShowError(L"2.5-3 定数バッファMap", hr);
-                return false;
-            }
-
-            // 2.5-4 変換行列の設定
-            m_pTransform[i]->World = XMMatrixIdentity();
-            m_pTransform[i]->View = XMMatrixLookAtRH(eyePos, targetPos, upward);
-            m_pTransform[i]->Proj = XMMatrixPerspectiveFovRH(fovY, aspect, 1.0f, 1000.0f);
-        }
-
-        // 2.6 テクスチャの読み込み
-        {
-            // 2.6-1 画像ファイルを探す。作業フォルダ → exeのフォルダ → その親…の順
-            std::wstring texturePath;
-            if (!SearchFilePath(L"res\\texture\\SampleTexture.dds", texturePath))
-            {
-                MessageBoxW(nullptr, L"res\\texture\\SampleTexture.ddsが見つかりません", L"テクスチャ読み込み失敗", MB_OK);
-                return false;
-            }
-
-            // 2.6-2 DirectXTK12 でDDSを読み込み、Upload → Default のコピーとバリアまでまとめて行う
-            DirectX::ResourceUploadBatch batch(m_pDevice.Get());
-            batch.Begin();
-
-            auto hr = DirectX::CreateDDSTextureFromFileEx(
-                m_pDevice.Get(),
-                batch,
-                texturePath.c_str(),
-                0,                                  // 最大サイズ。0なら制限なし
-                D3D12_RESOURCE_FLAG_NONE,
-                DirectX::DDS_LOADER_FORCE_SRGB,     // RTVが sRGB なので画像も sRGB として読む
-                m_pTexture.GetAddressOf());
-            if (FAILED(hr))
-            {
-                ShowError(L"2.6-2 テクスチャ読み込み", hr);
-                return false;
-            }
-
-            auto finished = batch.End(m_pQueue.Get());  // コマンドを実行して転送開始
-            finished.wait();                            // 転送が終わるまで待つ
-
-            m_pTexture->SetName(L"SampleTexture");      // PIXで見分けやすくする
-        }
-
-        // 2.7 SRVをヒープの [FrameCount] 番目に書き込む。SRVはテクスチャの読み方の説明書きにあたる
-        {
-            auto texDesc = m_pTexture->GetDesc();
-
-            D3D12_SHADER_RESOURCE_VIEW_DESC srv = {};
-            srv.Format = texDesc.Format;                                    // リソースと同じ形式
-            srv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-            srv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-            srv.Texture2D.MostDetailedMip = 0;
-            srv.Texture2D.MipLevels = texDesc.MipLevels;
-            srv.Texture2D.PlaneSlice = 0;
-            srv.Texture2D.ResourceMinLODClamp = 0.0f;
-
-            m_HandleCPU_SRV = m_pHeapCBV_SRV_UAV->GetCPUDescriptorHandleForHeapStart(); // 書き込む時に使う
-            m_HandleGPU_SRV = m_pHeapCBV_SRV_UAV->GetGPUDescriptorHandleForHeapStart(); // 描画時にルートへ渡す
-            m_HandleCPU_SRV.ptr += incSize * FrameCount;// CPUハンドルの設定
-            m_HandleGPU_SRV.ptr += incSize * FrameCount;// GPUハンドルの設定
-
-            m_pDevice->CreateShaderResourceView(m_pTexture.Get(), &srv, m_HandleCPU_SRV);
-        }
+        // 配列の後ろに追加していく
+        vertices.insert(vertices.end(), mesh.Vertices.begin(), mesh.Vertices.end());
+        indices.insert(indices.end(), mesh.Indices.begin(), mesh.Indices.end());
     }
 
-    //3.ルートシグニチャの生成
-    //ルートシグニチャは定数バッファやテクスチャ,サンプラーといったシェーダ内で使用するリソースのレイアウトを決めるオブジェクト
+    if (vertices.empty() || indices.empty())
     {
-        //3-1 ルートシグニチャのフラグ
-        // ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT : 頂点バッファと入力レイアウトを使う
-        // DENY_xxx_SHADER_ROOT_ACCESS        : 使わないドメイン・ハル・ジオメトリシェーダーからは見えなくし、少し速くする
-        auto flag = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
-        flag |= D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS;
-        flag |= D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS;
-        flag |= D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS;
-
-        // 3-2 ルートパラメータの配列。シェーダーへの「入口」の一覧
-        // [0] b0 : Transform → ディスクリプタテーブル。ヒープの CBV を指す
-        // [1] t0 : テクスチャ → ディスクリプタテーブル。ヒープの SRV を指す
-        // ※ ルートパラメータの番号と register の番号は別物
-        //    番号は描画時の SetGraphicsRoot○○(番号, …) で使う
-        D3D12_ROOT_PARAMETER params[2] = {};
-
-        // 3-3 [0] b0 : Transform の定数バッファ
-        // 3-3-1 ディスクリプタレンジ : 「ヒープの中の CBV を1個、b0 として使う」という範囲指定
-        D3D12_DESCRIPTOR_RANGE rangeCBV = {};
-        rangeCBV.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_CBV;    // 範囲の中身は CBV
-        rangeCBV.NumDescriptors = 1;                             // 1個
-        rangeCBV.BaseShaderRegister = 0;                         // b0 から
-        rangeCBV.RegisterSpace = 0;                              // space0。HLSL で space を書かなければ 0 になる
-        rangeCBV.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND; // 前のレンジの続きに置く。今は1個なので先頭になる
-
-        // 3-3-2 ルートパラメータ : 上のレンジを持つディスクリプタテーブル
-        params[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-        params[0].DescriptorTable.NumDescriptorRanges = 1;
-        params[0].DescriptorTable.pDescriptorRanges = &rangeCBV;
-        params[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;    // 頂点シェーダーだけが使う
-
-        // 3-5 [1] t0 : テクスチャの SRV
-        // 3-5-1 ディスクリプタレンジ : 「ヒープの中の SRV を1個、t0 として使う」
-        D3D12_DESCRIPTOR_RANGE rangeSRV = {};
-        rangeSRV.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;    // 範囲の中身は SRV
-        rangeSRV.NumDescriptors = 1;                             // 1個
-        rangeSRV.BaseShaderRegister = 0;                         // t0 から
-        rangeSRV.RegisterSpace = 0;
-        rangeSRV.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-
-        // 3-5-2 ルートパラメータ : 上のレンジを持つディスクリプタテーブル
-        // テクスチャはルートCBVのようにアドレスを直接渡せないので、テーブル経由で渡す
-        params[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-        params[1].DescriptorTable.NumDescriptorRanges = 1;
-        params[1].DescriptorTable.pDescriptorRanges = &rangeSRV;
-        params[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;     // ピクセルシェーダーだけが使う
-
-        // 3-6 s0 : 静的サンプラー。テクスチャの「読み方」を決める
-        // ルートシグニチャに直接埋め込むので、サンプラー用ヒープは不要
-        D3D12_STATIC_SAMPLER_DESC sampler = {};
-        sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;        // 縮小・拡大・ミップ間すべて線形補間
-        sampler.AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;      // UVが0～1の外なら繰り返す。モデルのUVははみ出すことがあるため
-        sampler.AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
-        sampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
-        sampler.MipLODBias = D3D12_DEFAULT_MIP_LOD_BIAS;         // ミップレベルのずらし量は0
-        sampler.MaxAnisotropy = 1;                               // 異方性フィルタ用。今は未使用
-        sampler.ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER;    // 比較サンプラー用。今は未使用
-        sampler.BorderColor = D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK; // BORDER モード時の色。今は未使用
-        sampler.MinLOD = 0.0f;                                   // 使うミップの範囲：最も細かい 0 から
-        sampler.MaxLOD = D3D12_FLOAT32_MAX;                      // 最も粗いものまで
-        sampler.ShaderRegister = 0;                              // s0
-        sampler.RegisterSpace = 0;
-        sampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
-
-        // 3-7 ルートシグニチャの設定。3-1～3-6 をまとめる
-        D3D12_ROOT_SIGNATURE_DESC desc = {};
-        desc.NumParameters = _countof(params);                   // ルートパラメータの数は2
-        desc.NumStaticSamplers = 1;                              // 静的サンプラーの数
-        desc.pParameters = params;
-        desc.pStaticSamplers = &sampler;
-        desc.Flags = flag;
-
-        ComPtr<ID3DBlob> pBlob;         // シリアライズ結果のバイト列
-        ComPtr<ID3DBlob> pErrorBlob;    // 失敗した時のエラーメッセージ
-
-        // 3-8 シリアライズ：設定を GPU ドライバに渡せるバイト列に変換する
-        auto hr = D3D12SerializeRootSignature(
-            &desc,
-            D3D_ROOT_SIGNATURE_VERSION_1_0,
-            pBlob.GetAddressOf(),
-            pErrorBlob.GetAddressOf());
-        if (FAILED(hr))
-        {
-            ShowError(L"3-8 ルートシグニチャ シリアライズ", hr);
-            return false;
-        }
-
-        // 3-9 ルートシグニチャの生成：バイト列からオブジェクトを作る
-        hr = m_pDevice->CreateRootSignature(
-            0,                              // ノードマスク。GPU1枚なので0
-            pBlob->GetBufferPointer(),
-            pBlob->GetBufferSize(),
-            IID_PPV_ARGS(m_pRootSignature.GetAddressOf()));
-        if (FAILED(hr))
-        {
-            ShowError(L"3-9 ルートシグニチャ生成", hr);
-            return false;
-        }
-    }
-
-    // 4.深度バッファの準備
-    {
-        constexpr DXGI_FORMAT depthFormat = DXGI_FORMAT_D32_FLOAT;
-
-        // 4.1 DSV用ディスクリプタヒープ
-        D3D12_DESCRIPTOR_HEAP_DESC desc = {};
-        desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
-        desc.NumDescriptors = 1;//
-        desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;//
-
-        auto hr = m_pDevice->CreateDescriptorHeap(
-            &desc, IID_PPV_ARGS(m_pHeapDSV.GetAddressOf()));
-        if (FAILED(hr))
-        {
-            ShowError(L"DSVヒープ生成", hr);
-            return false;
-        }
-
-        m_HandleDSV = m_pHeapDSV->GetCPUDescriptorHandleForHeapStart();//ハンドルはアドレスの定数値
-
-        // 4.2 GPUが深度値を保存するテクスチャ
-        D3D12_HEAP_PROPERTIES tex = {};
-        tex.Type = D3D12_HEAP_TYPE_DEFAULT;
-        tex.CreationNodeMask = 1;
-        tex.VisibleNodeMask = 1;
-
-        D3D12_RESOURCE_DESC depth = {};//デプス画像のサイズ,形式,サンプル数
-        depth.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-        depth.Width = m_Width;
-        depth.Height = m_Height;
-        depth.DepthOrArraySize = 1;
-        depth.MipLevels = 1;
-        depth.Format = depthFormat;
-        depth.SampleDesc.Count = 1;
-        depth.SampleDesc.Quality = 0;
-        depth.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
-        depth.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
-
-        D3D12_CLEAR_VALUE clear = {};//クリア値によく使う値
-        clear.Format = depthFormat;
-        clear.DepthStencil.Depth = 1.0f;
-        clear.DepthStencil.Stencil = 0;
-
-        // 4.3 リソース生成
-        hr = m_pDevice->CreateCommittedResource(
-            &tex,
-            D3D12_HEAP_FLAG_NONE,
-            &depth,
-            D3D12_RESOURCE_STATE_DEPTH_WRITE,
-            &clear,
-            IID_PPV_ARGS(m_pDepthBuffer.GetAddressOf()));
-        if (FAILED(hr))
-        {
-            ShowError(L"深度バッファ生成", hr);
-            return false;
-        }
-
-        // 4.4  ヒープ内の1スロットにDSVを書き込む
-        D3D12_DEPTH_STENCIL_VIEW_DESC dsv = {};
-        dsv.Format = depthFormat;
-        dsv.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
-        dsv.Flags = D3D12_DSV_FLAG_NONE;
-        dsv.Texture2D.MipSlice = 0;
-
-        m_pDevice->CreateDepthStencilView(
-            m_pDepthBuffer.Get(), &dsv, m_HandleDSV);
-    }
-
-
-
-    //5.パイプラインステートの生成
-    {
-        // 5.0～5.2 入力レイアウト
-        // Mesh.cpp で定義した MeshVertex::InputLayout を使う。位置・法線・UV・接線の4要素
-
-        // 5.3 ラスタライザーステートの設定：ラスタライズを行うときの状態
-        D3D12_RASTERIZER_DESC descRS;
-        descRS.FillMode = D3D12_FILL_MODE_SOLID;//三角形を塗りつぶし
-        descRS.CullMode = D3D12_CULL_MODE_NONE;//前面も背面も描画する
-        descRS.FrontCounterClockwise = FALSE;//頂点の並び順が反時計回りなら前面とする
-        descRS.DepthBias = D3D12_DEFAULT_DEPTH_BIAS;// 深度値に加算する値。0でよい
-        descRS.DepthBiasClamp = D3D12_DEFAULT_DEPTH_BIAS_CLAMP;// DepthBias の最大値。0でよい
-        descRS.SlopeScaledDepthBias = D3D12_DEFAULT_SLOPE_SCALED_DEPTH_BIAS;// 深度値に加算する値の、勾配に応じたスケーリング値。0でよい
-        descRS.DepthClipEnable = FALSE;// 距離に基づくクリッピングを有効にするか。無効でよい
-        descRS.MultisampleEnable = FALSE;//マルチサンプリング
-        descRS.AntialiasedLineEnable = TRUE;//アンチエイリアス
-        descRS.ForcedSampleCount = 0;
-        descRS.ConservativeRaster = D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF;//厳密判定OFF
-
-        // 5.4レンダーターゲットのブレンド設定
-        D3D12_RENDER_TARGET_BLEND_DESC descRTBS = {
-            FALSE, FALSE,
-            D3D12_BLEND_ONE, D3D12_BLEND_ZERO, D3D12_BLEND_OP_ADD,
-            D3D12_BLEND_ONE, D3D12_BLEND_ZERO, D3D12_BLEND_OP_ADD,
-            D3D12_LOGIC_OP_NOOP,
-            D3D12_COLOR_WRITE_ENABLE_ALL
-        };
-
-        // 5.5ブレンドステートの設定
-        D3D12_BLEND_DESC descBS;
-        descBS.AlphaToCoverageEnable = FALSE;
-        descBS.IndependentBlendEnable = FALSE;
-        for (UINT i = 0; i < D3D12_SIMULTANEOUS_RENDER_TARGET_COUNT; ++i)
-        {
-            descBS.RenderTarget[i] = descRTBS;
-        }
-
-        ComPtr<ID3DBlob> pVSBlob;
-        ComPtr<ID3DBlob> pPSBlob;
-
-        // 5.6頂点シェーダ読み込み
-        auto vsPath = GetExeDirectory() + L"SimpleTexVS.cso";
-        auto hr = D3DReadFileToBlob(vsPath.c_str(), pVSBlob.GetAddressOf());
-        if (FAILED(hr))
-        {
-            MessageBoxW(nullptr, vsPath.c_str(), L"VS読み込み失敗", MB_OK);
-            return false;
-        }
-
-        // 5.7ピクセルシェーダ読み込み
-        auto psPath = GetExeDirectory() + L"SimpleTexPS.cso";
-        hr = D3DReadFileToBlob(psPath.c_str(), pPSBlob.GetAddressOf());
-        if (FAILED(hr))
-        {
-            MessageBoxW(nullptr, psPath.c_str(), L"PS読み込み失敗", MB_OK);
-            return false;
-        }
-        // 5.8深度ステンシルステートの設定
-        D3D12_DEPTH_STENCIL_DESC descDSS = {};
-        descDSS.DepthEnable = TRUE;// 深度テストを有効にする
-        descDSS.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;// テストを通過した部分の深度を書き込む
-        descDSS.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;// 保存済みの深度より小さい＝手前なら通過
-        descDSS.StencilEnable = FALSE;// 今回はステンシルを使わない
-
-        // 5.9パイプラインステートの設定
-        D3D12_GRAPHICS_PIPELINE_STATE_DESC desc = {};
-        desc.InputLayout = MeshVertex::InputLayout;   // * 変更
-        desc.pRootSignature = m_pRootSignature.Get();
-        desc.VS = { pVSBlob->GetBufferPointer(), pVSBlob->GetBufferSize() };
-        desc.PS = { pPSBlob->GetBufferPointer(), pPSBlob->GetBufferSize() };
-        desc.RasterizerState = descRS;
-        desc.BlendState = descBS;
-        desc.DepthStencilState = descDSS;
-        desc.SampleMask = UINT_MAX;
-        desc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-        desc.NumRenderTargets = 1;
-        desc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
-        desc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
-        desc.SampleDesc.Count = 1;
-        desc.SampleDesc.Quality = 0;
-
-        // 5.10パイプラインステートを生成
-        hr = m_pDevice->CreateGraphicsPipelineState(
-            &desc,
-            IID_PPV_ARGS(m_pPSO.GetAddressOf()));
-        if (FAILED(hr))
-        {
-            ShowError(L"4 PSO生成", hr);
-            return false;
-        }
-    }
-
-    //6.ビューポートとシザー矩形の設定
-    {
-        m_Viewport.TopLeftX = 0;
-        m_Viewport.TopLeftY = 0;
-        m_Viewport.Width = static_cast<float>(m_Width);
-        m_Viewport.Height = static_cast<float>(m_Height);
-        m_Viewport.MinDepth = 0.0f;
-        m_Viewport.MaxDepth = 1.0f;
-
-        m_Scissor.left = 0;
-        m_Scissor.right = m_Width;
-        m_Scissor.top = 0;
-        m_Scissor.bottom = m_Height;
+        MessageBoxW(nullptr, L"メッシュに三角形がありません", L"メッシュ読み込み失敗", MB_OK);
+        return false;
     }
 
     return true;
+}
+
+//-----------------------------------------------------------------------------
+// 2. 頂点バッファの生成
+// 本来頂点情報はCPUにあるが、GPUが扱えるようにするために、GPU側が読み取れるような「リソース」を作る必要がある
+// 頂点シェーダの入力データに合うように頂点バッファを作成する。
+// GPUが読むとき、必要な情報は「アドレス・サイズ・ストライド」のみであるため、ディスクリプタは不要で「ビュー」と呼ばれる構造体を作るだけでよい
+// 頂点データをGPU側が扱える頂点バッファの中に入れてGPUへの渡し方まで用意
+// ここではGPU側では何の処理も行わない
+//-----------------------------------------------------------------------------
+bool App::CreateVertexBuffer(const std::vector<MeshVertex>& vertices)
+{
+    // 頂点データの中身は 1.(LoadMeshData)で読み込んだ vertices
+    // バッファの大きさ = 頂点1個のサイズ × 頂点の数
+    const auto vbSize = static_cast<UINT>(sizeof(MeshVertex) * vertices.size());
+
+    // 2-1,リソースの生成
+
+    // ヒーププロパティ
+    // どの種類のメモリに置くか,本件だとCPUから書ける実メモリに置く
+    D3D12_HEAP_PROPERTIES heapProps = {};
+    heapProps.Type = D3D12_HEAP_TYPE_UPLOAD; // GPUへ
+    heapProps.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN; // お任せ
+    heapProps.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN; // お任せ
+    heapProps.CreationNodeMask = 1; // 単一GPU
+    heapProps.VisibleNodeMask = 1; // 単一GPU
+
+    // リソースの設定：中身はまだ空の入れ物
+    // この場合のメモリはGPUがアクセスできるメモリ上の「空の入れ物」
+    // 確保するメモリの「形・サイズ・種類」をドライバに伝える
+    D3D12_RESOURCE_DESC resourceDesc = {};
+    resourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER; // バッファ
+    resourceDesc.Alignment = 0;
+    resourceDesc.Width = vbSize; // Bufferの場合はバッファサイズ,Textureの場合は横幅
+    resourceDesc.Height = 1; // Bufferの場合は1,Textureの場合は縦幅
+    resourceDesc.DepthOrArraySize = 1; // Bufferの場合は1,Textureの場合は配列数,3次元テクスチャの場合は奥行き
+    resourceDesc.MipLevels = 1; // Textureの場合はミップマップレベル数
+    resourceDesc.Format = DXGI_FORMAT_UNKNOWN; // Textureの場合はピクセルフォーマット
+    resourceDesc.SampleDesc.Count = 1;
+    resourceDesc.SampleDesc.Quality = 0; // Textureの場合はマルチサンプルを設定
+    resourceDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR; // レイアウト
+    resourceDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+
+    // 生成
+    // 設定をもとに実際にGPUメモリを確保し、リソースを作る
+    // このCreateCommittedResource関数は、ドライバを介してメモリを確保しているため、GPUからもアクセスできるようになっている
+    auto hr = m_pDevice->CreateCommittedResource(
+        &heapProps,
+        D3D12_HEAP_FLAG_NONE,
+        &resourceDesc,
+        D3D12_RESOURCE_STATE_GENERIC_READ, // リソースの初期状態
+        nullptr,
+        IID_PPV_ARGS(m_pVB.GetAddressOf())); // メモリの確保とリソースの生成
+    if (FAILED(hr))
+    {
+        ShowError(L"2-1 頂点バッファ生成", hr);
+        return false;
+    }
+
+
+    // 2-2頂点データを書き込む
+    // マッピング
+    // m_pVBはリソースを操作するためのオブジェクトを指すポインタ
+    // 確保した空メモリにCPU側の頂点データを実際に書き込む
+
+    void* ptr = nullptr;
+    hr = m_pVB->Map(0, nullptr, &ptr);
+    if (FAILED(hr))
+    {
+        ShowError(L"2-2 頂点バッファMap", hr);
+        return false;
+    }
+
+    // 頂点データをマッピング先に設定
+    memcpy(ptr, vertices.data(), vbSize);
+
+    // マッピング解除
+    m_pVB->Unmap(0, nullptr);
+
+    // 2-3View構造体を作成
+    // 頂点バッファビューの設定。ただし、ビュー自体はGPU側から読めない
+    m_VBV.BufferLocation = m_pVB->GetGPUVirtualAddress(); // GPU仮想アドレス
+    m_VBV.SizeInBytes = vbSize; // 頂点バッファ全体のサイズ
+    m_VBV.StrideInBytes = static_cast<UINT>(sizeof(MeshVertex)); // 1頂点あたりのサイズ
+
+    return true;
+}
+
+//-----------------------------------------------------------------------------
+// 3. インデックスバッファの生成
+// 頂点を結ぶ順番(インデックス)をGPU側が読めるバッファに入れ、GPUへの渡し方まで用意する
+// 同じ頂点を何度も書かずに済む
+//-----------------------------------------------------------------------------
+bool App::CreateIndexBuffer(const std::vector<uint32_t>& indices)
+{
+    // インデックスデータは 1.(LoadMeshData)で読み込んだ indices
+    const auto ibSize = static_cast<UINT>(sizeof(uint32_t) * indices.size());
+
+    // 3-1,リソースの生成
+
+    // ヒーププロパティ
+    D3D12_HEAP_PROPERTIES heapProps = {};
+    heapProps.Type = D3D12_HEAP_TYPE_UPLOAD; // GPUへ
+    heapProps.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN; // お任せ
+    heapProps.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN; // お任せ
+    heapProps.CreationNodeMask = 1; // 単一GPU
+    heapProps.VisibleNodeMask = 1; // 単一GPU
+
+    // リソースの設定
+    D3D12_RESOURCE_DESC resourceDesc = {};
+    resourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER; // バッファ
+    resourceDesc.Alignment = 0;
+    resourceDesc.Width = ibSize;
+    resourceDesc.Height = 1;
+    resourceDesc.DepthOrArraySize = 1;
+    resourceDesc.MipLevels = 1;
+    resourceDesc.Format = DXGI_FORMAT_UNKNOWN;
+    resourceDesc.SampleDesc.Count = 1;
+    resourceDesc.SampleDesc.Quality = 0;
+    resourceDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+    resourceDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+
+    // 生成
+    auto hr = m_pDevice->CreateCommittedResource(
+        &heapProps,
+        D3D12_HEAP_FLAG_NONE,
+        &resourceDesc,
+        D3D12_RESOURCE_STATE_GENERIC_READ, // リソースの初期状態
+        nullptr,
+        IID_PPV_ARGS(m_pIB.GetAddressOf()));
+    if (FAILED(hr))
+    {
+        ShowError(L"3-1 インデックスバッファ生成", hr);
+        return false;
+    }
+
+
+    // 3-2インデックスデータを書き込む
+    // マッピング
+
+    void* ptr = nullptr;
+    hr = m_pIB->Map(0, nullptr, &ptr);
+    if (FAILED(hr))
+    {
+        ShowError(L"3-2 インデックスバッファMap", hr);
+        return false;
+    }
+
+    // インデックスデータをマッピング先に設定
+    memcpy(ptr, indices.data(), ibSize);
+
+    // マッピング解除
+    m_pIB->Unmap(0, nullptr);
+
+    // 3-3View構造体を作成
+    // インデックスバッファビューの設定
+    m_IBV.BufferLocation = m_pIB->GetGPUVirtualAddress(); // GPU仮想アドレス
+    m_IBV.Format = DXGI_FORMAT_R32_UINT; // インデックス1個の型(uint32_t なので R32_UINT)
+    m_IBV.SizeInBytes = ibSize; // インデックスバッファ全体のサイズ
+
+    return true;
+}
+
+//-----------------------------------------------------------------------------
+// 4. 定数バッファとテクスチャ用のディスクリプタヒープの生成
+// 定数バッファとテクスチャの生成
+// CBV_SRV_UAV のディスクリプタヒープを1つ作り、次のように並べる
+// [0] CBV : m_pCB[0] フレーム0用の Transform  → b0
+// [1] CBV : m_pCB[1] フレーム1用の Transform  → b0
+// [2] SRV : m_pTexture                          → t0
+//-----------------------------------------------------------------------------
+bool App::CreateCbvSrvHeap()
+{
+    // 4-1 ディスクリプタヒープの生成
+    D3D12_DESCRIPTOR_HEAP_DESC cbvSrvHeapDesc = {};
+    cbvSrvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+    cbvSrvHeapDesc.NumDescriptors = FrameCount + 1;                 // CBV×2 + SRV×1
+    cbvSrvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE; // シェーダーから見えるヒープにする。ここがRTV・DSVとの違い
+    cbvSrvHeapDesc.NodeMask = 0;
+
+    auto hr = m_pDevice->CreateDescriptorHeap(&cbvSrvHeapDesc, IID_PPV_ARGS(m_pHeapCBV_SRV_UAV.GetAddressOf()));
+    if (FAILED(hr))
+    {
+        ShowError(L"4-1 CBV_SRV_UAVヒープ生成", hr);
+        return false;
+    }
+
+    return true;
+}
+
+//-----------------------------------------------------------------------------
+// 5. 定数バッファの生成
+// フレームの数だけ作り、Map したまま持ち続ける
+//-----------------------------------------------------------------------------
+bool App::CreateConstantBuffers()
+{
+    // 5-0 1スロット分のバイト数。GPUによって違うので必ず問い合わせる
+    // CBVとSRVで確保する1スロットのサイズは変わらないので,CBVとSRVは同じディスクリプタに置くことができる
+    const auto incSize = m_pDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+
+    // 5-1 ヒーププロパティ
+    D3D12_HEAP_PROPERTIES heapProps = {};
+    heapProps.Type = D3D12_HEAP_TYPE_UPLOAD;                      // CPUから書けてGPUが読めるメモリ
+    heapProps.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+    heapProps.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+    heapProps.CreationNodeMask = 1;
+    heapProps.VisibleNodeMask = 1;
+
+    // 5-2 リソースの設定。GPUから見えるメモリの塊で、中身はただのバイト列
+    D3D12_RESOURCE_DESC resourceDesc = {};
+    resourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+    resourceDesc.Alignment = 0;
+    resourceDesc.Width = sizeof(Transform);                          // alignas(256) なので256の倍数
+    resourceDesc.Height = 1;
+    resourceDesc.DepthOrArraySize = 1;
+    resourceDesc.MipLevels = 1;
+    resourceDesc.Format = DXGI_FORMAT_UNKNOWN;
+    resourceDesc.SampleDesc.Count = 1;
+    resourceDesc.SampleDesc.Quality = 0;
+    resourceDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+    resourceDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+
+    // 5-3 カメラ設定
+    auto eyePos = XMVectorSet(0.0f, 0.0f, 5.0f, 0.0f);
+    auto targetPos = XMVectorZero();
+    auto upward = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
+    constexpr auto fovY = XMConvertToRadians(37.5f);
+    auto aspect = static_cast<float>(m_Width) / static_cast<float>(m_Height);
+
+    // 5-4 定数バッファとCBVをフレームの数だけ作る
+    for (auto i = 0u; i < FrameCount; ++i)
+    {
+        // 5-4-1 リソースを作成してメモリを確保する
+        auto hr = m_pDevice->CreateCommittedResource(
+            &heapProps,
+            D3D12_HEAP_FLAG_NONE,
+            &resourceDesc,
+            D3D12_RESOURCE_STATE_GENERIC_READ,
+            nullptr,
+            IID_PPV_ARGS(m_pCB[i].GetAddressOf()));
+        if (FAILED(hr))
+        {
+            ShowError(L"5-4-1 定数バッファ生成", hr);
+            return false;
+        }
+
+        // 5-4-2 CBVをヒープの i 番目に書き込む。CBVは定数バッファの読み方の説明書きにあたる
+        auto cbvHandle = m_pHeapCBV_SRV_UAV->GetCPUDescriptorHandleForHeapStart();
+        cbvHandle.ptr += incSize * i;
+
+        D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc = {};
+        cbvDesc.BufferLocation = m_pCB[i]->GetGPUVirtualAddress(); // どのバッファか
+        cbvDesc.SizeInBytes = static_cast<UINT>(resourceDesc.Width);       // バイト数。256の倍数でなければならない
+        m_pDevice->CreateConstantBufferView(&cbvDesc, cbvHandle);
+
+        // 5-4-3 マッピング。CPUから書き込めるポインタを持ち続ける
+        hr = m_pCB[i]->Map(0, nullptr, reinterpret_cast<void**>(&m_pTransform[i]));
+        if (FAILED(hr))
+        {
+            ShowError(L"5-4-3 定数バッファMap", hr);
+            return false;
+        }
+
+        // 5-4-4 変換行列の設定
+        m_pTransform[i]->World = XMMatrixIdentity();
+        m_pTransform[i]->View = XMMatrixLookAtRH(eyePos, targetPos, upward);
+        m_pTransform[i]->Proj = XMMatrixPerspectiveFovRH(fovY, aspect, 1.0f, 1000.0f);
+    }
+
+    return true;
+}
+
+//-----------------------------------------------------------------------------
+// 6. テクスチャの読み込みと SRV の作成
+//-----------------------------------------------------------------------------
+bool App::LoadTexture()
+{
+    // 6-0 1スロット分のバイト数。GPUによって違うので必ず問い合わせる
+    // CBVとSRVで確保する1スロットのサイズは変わらないので,CBVとSRVは同じディスクリプタに置くことができる
+    const auto incSize = m_pDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+
+    // 6-1 テクスチャの読み込み
+    // 6-1-1 画像ファイルを探す。作業フォルダ → exeのフォルダ → その親…の順
+    std::wstring texturePath;
+    if (!SearchFilePath(L"res\\texture\\SampleTexture.dds", texturePath))
+    {
+        MessageBoxW(nullptr, L"res\\texture\\SampleTexture.ddsが見つかりません", L"テクスチャ読み込み失敗", MB_OK);
+        return false;
+    }
+
+    // 6-1-2 DirectXTK12 でDDSを読み込み、Upload → Default のコピーとバリアまでまとめて行う
+    DirectX::ResourceUploadBatch resourceUpload(m_pDevice.Get());
+    resourceUpload.Begin();
+
+    auto hr = DirectX::CreateDDSTextureFromFileEx(
+        m_pDevice.Get(),
+        resourceUpload,
+        texturePath.c_str(),
+        0,                                  // 最大サイズ。0なら制限なし
+        D3D12_RESOURCE_FLAG_NONE,
+        DirectX::DDS_LOADER_FORCE_SRGB,     // RTVが sRGB なので画像も sRGB として読む
+        m_pTexture.GetAddressOf());
+    if (FAILED(hr))
+    {
+        ShowError(L"6-1-2 テクスチャ読み込み", hr);
+        return false;
+    }
+
+    auto finished = resourceUpload.End(m_pQueue.Get());  // コマンドを実行して転送開始
+    finished.wait();                            // 転送が終わるまで待つ
+
+    m_pTexture->SetName(L"SampleTexture");      // PIXで見分けやすくする
+
+    // 6-2 SRVをヒープの [FrameCount] 番目に書き込む。SRVはテクスチャの読み方の説明書きにあたる
+    auto textureDesc = m_pTexture->GetDesc();
+
+    D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+    srvDesc.Format = textureDesc.Format;                                    // リソースと同じ形式
+    srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    srvDesc.Texture2D.MostDetailedMip = 0;
+    srvDesc.Texture2D.MipLevels = textureDesc.MipLevels;
+    srvDesc.Texture2D.PlaneSlice = 0;
+    srvDesc.Texture2D.ResourceMinLODClamp = 0.0f;
+
+    auto srvCpuHandle = m_pHeapCBV_SRV_UAV->GetCPUDescriptorHandleForHeapStart(); // 書き込む時に使う
+    m_HandleGPU_SRV = m_pHeapCBV_SRV_UAV->GetGPUDescriptorHandleForHeapStart(); // 描画時にルートへ渡す
+    srvCpuHandle.ptr += incSize * FrameCount; // CPUハンドルの設定
+    m_HandleGPU_SRV.ptr += incSize * FrameCount; // GPUハンドルの設定
+
+    m_pDevice->CreateShaderResourceView(m_pTexture.Get(), &srvDesc, srvCpuHandle);
+
+    return true;
+}
+
+//-----------------------------------------------------------------------------
+// 7. ルートシグニチャの生成
+//-----------------------------------------------------------------------------
+bool App::CreateRootSignature()
+{
+    // 7-1 ルートシグニチャのフラグ
+    // ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT : 頂点バッファと入力レイアウトを使う
+    // DENY_xxx_SHADER_ROOT_ACCESS        : 使わないドメイン・ハル・ジオメトリシェーダーからは見えなくし、少し速くする
+    auto rootSignatureFlags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
+    rootSignatureFlags |= D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS;
+    rootSignatureFlags |= D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS;
+    rootSignatureFlags |= D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS;
+
+    // 7-2 ルートパラメータの配列。シェーダーへの「入口」の一覧
+    // [0] b0 : Transform → ディスクリプタテーブル。ヒープの CBV を指す
+    // [1] t0 : テクスチャ → ディスクリプタテーブル。ヒープの SRV を指す
+    // ※ ルートパラメータの番号と register の番号は別物
+    //    番号は描画時の SetGraphicsRoot○○(番号, …) で使う
+    D3D12_ROOT_PARAMETER rootParameters[2] = {};
+
+    // 7-3 [0] b0 : Transform の定数バッファ
+    // 7-3-1 ディスクリプタレンジ : 「ヒープの中の CBV を1個、b0 として使う」という範囲指定
+    D3D12_DESCRIPTOR_RANGE cbvRange = {};
+    cbvRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_CBV;    // 範囲の中身は CBV
+    cbvRange.NumDescriptors = 1;                             // 1個
+    cbvRange.BaseShaderRegister = 0;                         // b0 から
+    cbvRange.RegisterSpace = 0;                              // space0。HLSL で space を書かなければ 0 になる
+    cbvRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND; // 前のレンジの続きに置く。今は1個なので先頭になる
+
+    // 7-3-2 ルートパラメータ : 上のレンジを持つディスクリプタテーブル
+    rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    rootParameters[0].DescriptorTable.NumDescriptorRanges = 1;
+    rootParameters[0].DescriptorTable.pDescriptorRanges = &cbvRange;
+    rootParameters[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;    // 頂点シェーダーだけが使う
+
+    // 7-5 [1] t0 : テクスチャの SRV
+    // 7-5-1 ディスクリプタレンジ : 「ヒープの中の SRV を1個、t0 として使う」
+    D3D12_DESCRIPTOR_RANGE srvRange = {};
+    srvRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;    // 範囲の中身は SRV
+    srvRange.NumDescriptors = 1;                             // 1個
+    srvRange.BaseShaderRegister = 0;                         // t0 から
+    srvRange.RegisterSpace = 0;
+    srvRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+    // 7-5-2 ルートパラメータ : 上のレンジを持つディスクリプタテーブル
+    // テクスチャはルートCBVのようにアドレスを直接渡せないので、テーブル経由で渡す
+    rootParameters[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    rootParameters[1].DescriptorTable.NumDescriptorRanges = 1;
+    rootParameters[1].DescriptorTable.pDescriptorRanges = &srvRange;
+    rootParameters[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;     // ピクセルシェーダーだけが使う
+
+    // 7-6 s0 : 静的サンプラー。テクスチャの「読み方」を決める
+    // ルートシグニチャに直接埋め込むので、サンプラー用ヒープは不要
+    D3D12_STATIC_SAMPLER_DESC sampler = {};
+    sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;        // 縮小・拡大・ミップ間すべて線形補間
+    sampler.AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;      // UVが0～1の外なら繰り返す。モデルのUVははみ出すことがあるため
+    sampler.AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+    sampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+    sampler.MipLODBias = D3D12_DEFAULT_MIP_LOD_BIAS;         // ミップレベルのずらし量は0
+    sampler.MaxAnisotropy = 1;                               // 異方性フィルタ用。今は未使用
+    sampler.ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER;    // 比較サンプラー用。今は未使用
+    sampler.BorderColor = D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK; // BORDER モード時の色。今は未使用
+    sampler.MinLOD = 0.0f;                                   // 使うミップの範囲：最も細かい 0 から
+    sampler.MaxLOD = D3D12_FLOAT32_MAX;                      // 最も粗いものまで
+    sampler.ShaderRegister = 0;                              // s0
+    sampler.RegisterSpace = 0;
+    sampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+
+    // 7-7 ルートシグニチャの設定。3-1～3-6 をまとめる
+    D3D12_ROOT_SIGNATURE_DESC rootSignatureDesc = {};
+    rootSignatureDesc.NumParameters = _countof(rootParameters);                   // ルートパラメータの数は2
+    rootSignatureDesc.NumStaticSamplers = 1;                              // 静的サンプラーの数
+    rootSignatureDesc.pParameters = rootParameters;
+    rootSignatureDesc.pStaticSamplers = &sampler;
+    rootSignatureDesc.Flags = rootSignatureFlags;
+
+    ComPtr<ID3DBlob> pSignatureBlob;         // シリアライズ結果のバイト列
+    ComPtr<ID3DBlob> pErrorBlob;    // 失敗した時のエラーメッセージ
+
+    // 7-8 シリアライズ：設定を GPU ドライバに渡せるバイト列に変換する
+    auto hr = D3D12SerializeRootSignature(
+        &rootSignatureDesc,
+        D3D_ROOT_SIGNATURE_VERSION_1_0,
+        pSignatureBlob.GetAddressOf(),
+        pErrorBlob.GetAddressOf());
+    if (FAILED(hr))
+    {
+        ShowError(L"7-8 ルートシグニチャ シリアライズ", hr);
+        return false;
+    }
+
+    // 7-9 ルートシグニチャの生成：バイト列からオブジェクトを作る
+    hr = m_pDevice->CreateRootSignature(
+        0,                              // ノードマスク。GPU1枚なので0
+        pSignatureBlob->GetBufferPointer(),
+        pSignatureBlob->GetBufferSize(),
+        IID_PPV_ARGS(m_pRootSignature.GetAddressOf()));
+    if (FAILED(hr))
+    {
+        ShowError(L"7-9 ルートシグニチャ生成", hr);
+        return false;
+    }
+
+    return true;
+}
+
+//-----------------------------------------------------------------------------
+// 8. 深度バッファの生成
+//-----------------------------------------------------------------------------
+bool App::CreateDepthBuffer()
+{
+    constexpr DXGI_FORMAT depthFormat = DXGI_FORMAT_D32_FLOAT;
+
+    // 8-1 DSV用ディスクリプタヒープ
+    D3D12_DESCRIPTOR_HEAP_DESC dsvHeapDesc = {};
+    dsvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
+    dsvHeapDesc.NumDescriptors = 1; //
+    dsvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE; //
+
+    auto hr = m_pDevice->CreateDescriptorHeap(
+        &dsvHeapDesc, IID_PPV_ARGS(m_pHeapDSV.GetAddressOf()));
+    if (FAILED(hr))
+    {
+        ShowError(L"DSVヒープ生成", hr);
+        return false;
+    }
+
+    m_HandleDSV = m_pHeapDSV->GetCPUDescriptorHandleForHeapStart(); // ハンドルはアドレスの定数値
+
+    // 8-2 GPUが深度値を保存するテクスチャ
+    D3D12_HEAP_PROPERTIES heapProps = {};
+    heapProps.Type = D3D12_HEAP_TYPE_DEFAULT;
+    heapProps.CreationNodeMask = 1;
+    heapProps.VisibleNodeMask = 1;
+
+    D3D12_RESOURCE_DESC depthDesc = {}; // デプス画像のサイズ,形式,サンプル数
+    depthDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+    depthDesc.Width = m_Width;
+    depthDesc.Height = m_Height;
+    depthDesc.DepthOrArraySize = 1;
+    depthDesc.MipLevels = 1;
+    depthDesc.Format = depthFormat;
+    depthDesc.SampleDesc.Count = 1;
+    depthDesc.SampleDesc.Quality = 0;
+    depthDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+    depthDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
+
+    D3D12_CLEAR_VALUE depthClearValue = {}; // クリア値によく使う値
+    depthClearValue.Format = depthFormat;
+    depthClearValue.DepthStencil.Depth = 1.0f;
+    depthClearValue.DepthStencil.Stencil = 0;
+
+    // 8-3 リソース生成
+    hr = m_pDevice->CreateCommittedResource(
+        &heapProps,
+        D3D12_HEAP_FLAG_NONE,
+        &depthDesc,
+        D3D12_RESOURCE_STATE_DEPTH_WRITE,
+        &depthClearValue,
+        IID_PPV_ARGS(m_pDepthBuffer.GetAddressOf()));
+    if (FAILED(hr))
+    {
+        ShowError(L"深度バッファ生成", hr);
+        return false;
+    }
+
+    // 8-4  ヒープ内の1スロットにDSVを書き込む
+    D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc = {};
+    dsvDesc.Format = depthFormat;
+    dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
+    dsvDesc.Flags = D3D12_DSV_FLAG_NONE;
+    dsvDesc.Texture2D.MipSlice = 0;
+
+    m_pDevice->CreateDepthStencilView(
+        m_pDepthBuffer.Get(), &dsvDesc, m_HandleDSV);
+
+    return true;
+}
+
+//-----------------------------------------------------------------------------
+// 9. パイプラインステートの生成
+//-----------------------------------------------------------------------------
+bool App::CreatePipelineState()
+{
+    // 9-0～9-2 入力レイアウト
+    // Mesh.cpp で定義した MeshVertex::InputLayout を使う。位置・法線・UV・接線の4要素
+
+    // 9-3 ラスタライザーステートの設定：ラスタライズを行うときの状態
+    D3D12_RASTERIZER_DESC rasterizerDesc;
+    rasterizerDesc.FillMode = D3D12_FILL_MODE_SOLID; // 三角形を塗りつぶし
+    rasterizerDesc.CullMode = D3D12_CULL_MODE_NONE; // 前面も背面も描画する
+    rasterizerDesc.FrontCounterClockwise = FALSE; // 頂点の並び順が反時計回りなら前面とする
+    rasterizerDesc.DepthBias = D3D12_DEFAULT_DEPTH_BIAS; // 深度値に加算する値。0でよい
+    rasterizerDesc.DepthBiasClamp = D3D12_DEFAULT_DEPTH_BIAS_CLAMP; // DepthBias の最大値。0でよい
+    rasterizerDesc.SlopeScaledDepthBias = D3D12_DEFAULT_SLOPE_SCALED_DEPTH_BIAS; // 深度値に加算する値の、勾配に応じたスケーリング値。0でよい
+    rasterizerDesc.DepthClipEnable = FALSE; // 距離に基づくクリッピングを有効にするか。無効でよい
+    rasterizerDesc.MultisampleEnable = FALSE; // マルチサンプリング
+    rasterizerDesc.AntialiasedLineEnable = TRUE; // アンチエイリアス
+    rasterizerDesc.ForcedSampleCount = 0;
+    rasterizerDesc.ConservativeRaster = D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF; // 厳密判定OFF
+
+    // 9-4レンダーターゲットのブレンド設定
+    D3D12_RENDER_TARGET_BLEND_DESC renderTargetBlendDesc = {
+        FALSE, FALSE,
+        D3D12_BLEND_ONE, D3D12_BLEND_ZERO, D3D12_BLEND_OP_ADD,
+        D3D12_BLEND_ONE, D3D12_BLEND_ZERO, D3D12_BLEND_OP_ADD,
+        D3D12_LOGIC_OP_NOOP,
+        D3D12_COLOR_WRITE_ENABLE_ALL
+    };
+
+    // 9-5ブレンドステートの設定
+    D3D12_BLEND_DESC blendDesc;
+    blendDesc.AlphaToCoverageEnable = FALSE;
+    blendDesc.IndependentBlendEnable = FALSE;
+    for (UINT i = 0; i < D3D12_SIMULTANEOUS_RENDER_TARGET_COUNT; ++i)
+    {
+        blendDesc.RenderTarget[i] = renderTargetBlendDesc;
+    }
+
+    ComPtr<ID3DBlob> pVSBlob;
+    ComPtr<ID3DBlob> pPSBlob;
+
+    // 9-6頂点シェーダ読み込み
+    auto vsPath = GetExeDirectory() + L"SimpleTexVS.cso";
+    auto hr = D3DReadFileToBlob(vsPath.c_str(), pVSBlob.GetAddressOf());
+    if (FAILED(hr))
+    {
+        MessageBoxW(nullptr, vsPath.c_str(), L"VS読み込み失敗", MB_OK);
+        return false;
+    }
+
+    // 9-7ピクセルシェーダ読み込み
+    auto psPath = GetExeDirectory() + L"SimpleTexPS.cso";
+    hr = D3DReadFileToBlob(psPath.c_str(), pPSBlob.GetAddressOf());
+    if (FAILED(hr))
+    {
+        MessageBoxW(nullptr, psPath.c_str(), L"PS読み込み失敗", MB_OK);
+        return false;
+    }
+    // 9-8深度ステンシルステートの設定
+    D3D12_DEPTH_STENCIL_DESC depthStencilDesc = {};
+    depthStencilDesc.DepthEnable = TRUE; // 深度テストを有効にする
+    depthStencilDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL; // テストを通過した部分の深度を書き込む
+    depthStencilDesc.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL; // 保存済みの深度より小さい＝手前なら通過
+    depthStencilDesc.StencilEnable = FALSE; // 今回はステンシルを使わない
+
+    // 9-9パイプラインステートの設定
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
+    psoDesc.InputLayout = MeshVertex::InputLayout;   // 
+    psoDesc.pRootSignature = m_pRootSignature.Get();
+    psoDesc.VS = { pVSBlob->GetBufferPointer(), pVSBlob->GetBufferSize() };
+    psoDesc.PS = { pPSBlob->GetBufferPointer(), pPSBlob->GetBufferSize() };
+    psoDesc.RasterizerState = rasterizerDesc;
+    psoDesc.BlendState = blendDesc;
+    psoDesc.DepthStencilState = depthStencilDesc;
+    psoDesc.SampleMask = UINT_MAX;
+    psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+    psoDesc.NumRenderTargets = 1;
+    psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+    psoDesc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
+    psoDesc.SampleDesc.Count = 1;
+    psoDesc.SampleDesc.Quality = 0;
+
+    // 9-10パイプラインステートを生成
+    hr = m_pDevice->CreateGraphicsPipelineState(
+        &psoDesc,
+        IID_PPV_ARGS(m_pPSO.GetAddressOf()));
+    if (FAILED(hr))
+    {
+        ShowError(L"4 PSO生成", hr);
+        return false;
+    }
+
+    return true;
+}
+
+//-----------------------------------------------------------------------------
+// 10. ビューポートとシザー矩形の設定
+//-----------------------------------------------------------------------------
+void App::InitViewport()
+{
+    m_Viewport.TopLeftX = 0;
+    m_Viewport.TopLeftY = 0;
+    m_Viewport.Width = static_cast<float>(m_Width);
+    m_Viewport.Height = static_cast<float>(m_Height);
+    m_Viewport.MinDepth = 0.0f;
+    m_Viewport.MaxDepth = 1.0f;
+
+    m_Scissor.left = 0;
+    m_Scissor.right = m_Width;
+    m_Scissor.top = 0;
+    m_Scissor.bottom = m_Height;
 }

@@ -1,15 +1,26 @@
-﻿#pragma once
-#include <windows.h>
+﻿//-----------------------------------------------------------------------------
+// File : Timer.h
+// Desc : 経過時間の計測。QueryPerformanceCounter を使った高精度タイマー
+//-----------------------------------------------------------------------------
+#pragma once
 
-class Timer {
+#include <Windows.h>
+
+///////////////////////////////////////////////////////////////////////////////
+// Timer class
+///////////////////////////////////////////////////////////////////////////////
+class Timer
+{
 public:
-	void Init();
-	void Tick();//フレーム更新
-	float GetDeltaTime() const { return m_DeltaSeconds; }//前フレームからの経過時間を取得
-	float GetTotalTime() const { return m_TotalSeconds; }//アプリケーション開始からの経過時間を取得
+    void Init();    // 計測を開始する
+    void Tick();    // フレームごとに呼び、経過時間を更新する
+
+    float  GetDeltaTime() const { return m_DeltaSeconds; }   // 前フレームからの経過時間。単位は秒
+    double GetTotalTime() const { return m_TotalSeconds; }   // 計測開始からの経過時間。単位は秒
+
 private:
-	LARGE_INTEGER m_Frequency{};//周波数
-	LARGE_INTEGER m_preCount{};//前フレームのカウント
-	float m_DeltaSeconds = 0.0f;//前回からの経過時間
-	float m_TotalSeconds = 0.0f;//起動からの経過時間
+    LARGE_INTEGER m_Frequency{};            // 周波数：1秒間に何回カウントするか
+    LARGE_INTEGER m_PrevCount{};            // 前フレームのカウント
+    float         m_DeltaSeconds = 0.0f;    // 前フレームからの経過時間。単位は秒
+    double        m_TotalSeconds = 0.0;     // 計測開始からの経過時間。単位は秒で、長時間でも精度が落ちないよう double にする
 };

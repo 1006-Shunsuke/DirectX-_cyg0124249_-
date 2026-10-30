@@ -39,7 +39,8 @@ const D3D12_INPUT_LAYOUT_DESC MeshVertex::InputLayout =
 static_assert(sizeof(MeshVertex) == 44, "MeshVertex のサイズが入力レイアウトと合っていません");
 
 
-namespace {
+namespace
+{
 
     //-------------------------------------------------------------------------
     // wchar_t(UTF-16) の文字列を UTF-8 の std::string に変換する
@@ -109,18 +110,18 @@ namespace {
 
         // 読み込み時に assimp にやってもらうポストプロセス
         Assimp::Importer importer;
-        unsigned int flag = 0;
-        flag |= aiProcess_Triangulate;              // 四角形などをすべて三角形に分割
-        flag |= aiProcess_PreTransformVertices;     // ノードの行列を頂点に焼き込み、階層をなくす
-        flag |= aiProcess_CalcTangentSpace;         // 接線を計算
-        flag |= aiProcess_GenSmoothNormals;         // 法線が無ければなめらかな法線を作る
-        flag |= aiProcess_GenUVCoords;
-        flag |= aiProcess_RemoveRedundantMaterials; // 重複したマテリアルをまとめる
-        flag |= aiProcess_OptimizeMeshes;           // 細かいメッシュをまとめて描画回数を減らす
-        flag |= aiProcess_FlipUVs;                  // UVの上下を反転する。OBJなどは下が v=0、DirectX は上が v=0 のため
+        unsigned int postProcessFlags = 0;
+        postProcessFlags |= aiProcess_Triangulate;              // 四角形などをすべて三角形に分割
+        postProcessFlags |= aiProcess_PreTransformVertices;     // ノードの行列を頂点に焼き込み、階層をなくす
+        postProcessFlags |= aiProcess_CalcTangentSpace;         // 接線を計算
+        postProcessFlags |= aiProcess_GenSmoothNormals;         // 法線が無ければなめらかな法線を作る
+        postProcessFlags |= aiProcess_GenUVCoords;
+        postProcessFlags |= aiProcess_RemoveRedundantMaterials; // 重複したマテリアルをまとめる
+        postProcessFlags |= aiProcess_OptimizeMeshes;           // 細かいメッシュをまとめて描画回数を減らす
+        postProcessFlags |= aiProcess_FlipUVs;                  // UVの上下を反転する。OBJなどは下が v=0、DirectX は上が v=0 のため
 
         // ファイルを読み込む。pScene の中身は importer が持っていて、importer が消えると一緒に消える
-        auto pScene = importer.ReadFile(path, flag);
+        auto pScene = importer.ReadFile(path, postProcessFlags);
 
         // チェック
         if (pScene == nullptr)

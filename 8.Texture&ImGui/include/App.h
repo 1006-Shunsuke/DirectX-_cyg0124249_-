@@ -14,7 +14,7 @@
 #include <wrl/client.h>
 #include <d3dcompiler.h>
 #include <DirectXMath.h>
-#include <Timer.h> // Timerクラスのヘッダをインクルード
+#include "Timer.h" // Timerクラスのヘッダをインクルード
 
 //-----------------------------------------------------------------------------
 // Linker
@@ -39,19 +39,6 @@ struct alignas(256) Transform
     DirectX::XMMATRIX   View;       // ビュー行列
     DirectX::XMMATRIX   Proj;       // 射影行列
 };
-
-///////////////////////////////////////////////////////////////////////////////
-// ConstantBufferView structure
-///////////////////////////////////////////////////////////////////////////////
-template<typename T>
-struct ConstantBufferView
-{
-    D3D12_CONSTANT_BUFFER_VIEW_DESC Desc;               // 定数バッファの構成設定
-    D3D12_CPU_DESCRIPTOR_HANDLE     HandleCPU;          // CPUディスクリプタハンドル
-    D3D12_GPU_DESCRIPTOR_HANDLE     HandleGPU;          // GPUディスクリプタハンドル
-    T* pBuffer;            // バッファ先頭へのポインタ
-};
-
 
 ///////////////////////////////////////////////////////////////////////////////
 // App class
@@ -97,15 +84,14 @@ private:
     ComPtr<ID3D12Fence>                    m_pFence;                       // フェンス
     ComPtr<ID3D12DescriptorHeap>           m_pHeapRTV;                     // ディスクリプタヒープ：CBV・SRV・UAV用
     ComPtr<ID3D12Resource>                 m_pVB;                          // 頂点バッファ
-	ComPtr<ID3D12Resource>                 m_pIB;                          // インデックスバッファ
+    ComPtr<ID3D12Resource>                 m_pIB;                          // インデックスバッファ
     ComPtr<ID3D12Resource>                 m_pCB[FrameCount];              // 定数バッファ
     ComPtr<ID3D12DescriptorHeap>           m_pHeapDSV;                     // DSV用ディスクリプタヒープ
-    ComPtr<ID3D12Resource>                 m_pDepthBuffer;                 //深度バッファ
+    ComPtr<ID3D12Resource>                 m_pDepthBuffer;                 // 深度バッファ
     ComPtr<ID3D12RootSignature>            m_pRootSignature;               // ルートシグニチャ
     ComPtr<ID3D12PipelineState>            m_pPSO;                         // パイプラインステート
     ComPtr<ID3D12DescriptorHeap>           m_pHeapCBV_SRV_UAV;             // CBV・SRV・UAV用ディスクリプタヒープ。シェーダから見える
     ComPtr<ID3D12Resource>                 m_pTexture;                     // テクスチャ
-    D3D12_CPU_DESCRIPTOR_HANDLE            m_HandleCPU_SRV{};              // テクスチャのSRVのCPUハンドル。作るときに使う
     D3D12_GPU_DESCRIPTOR_HANDLE            m_HandleGPU_SRV{};              // テクスチャのSRVのGPUハンドル。描画時に使う
     
 
@@ -118,8 +104,8 @@ private:
     D3D12_CPU_DESCRIPTOR_HANDLE     m_HandleDSV{};                  // 深度ハンドル。図形ごとにIDが必要
     D3D12_VIEWPORT                  m_Viewport;                     // ビューポート
     D3D12_RECT                      m_Scissor;                      // シザー矩形
-	D3D12_INDEX_BUFFER_VIEW         m_IBV;                          // インデックスバッファビュー
-	UINT                            m_IndexCount;                     //インデックス数を保持するメンバ変数
+    D3D12_INDEX_BUFFER_VIEW         m_IBV;                          // インデックスバッファビュー
+    UINT                            m_IndexCount = 0;               // 描くインデックスの数(DrawIndexedInstanced で使う)
     Transform*                      m_pTransform[FrameCount] = {};
 
     Timer                           m_Timer; // Timerクラスのメンバ変数
@@ -153,6 +139,17 @@ private:
 
     bool OnInit();
     void OnTerm();
+
+    // OnInit から順番に呼ぶ初期化処理(App_OnInit.cpp)
+    bool CreateVertexBuffer();
+    bool CreateIndexBuffer();
+    bool CreateCbvSrvHeap();
+    bool CreateConstantBuffers();
+    bool LoadTexture();
+    bool CreateRootSignature();
+    bool CreateDepthBuffer();
+    bool CreatePipelineState();
+    void InitViewport();
 
     bool InitImGui();   // ImGuiの初期化。InitD3D のあとに行う
     void TermImGui();   // ImGuiの終了処理。TermD3D の前に行う

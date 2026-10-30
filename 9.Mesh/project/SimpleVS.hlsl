@@ -1,17 +1,17 @@
 struct VSInput
 {
-    float3 Position : POSITION;// 位置座標 x, y, z
-    float4 Color : COLOR;//頂点カラー
+    float3 Position : POSITION; // 位置座標 x, y, z
+    float4 Color : COLOR; // 頂点カラー
 };
 struct VSOutput
 {
-    float4 Position:SV_POSITION;//位置座標
-    float4 Color : COLOR;//頂点カラー
+    float4 Position:SV_POSITION; // 位置座標
+    float4 Color : COLOR; // 頂点カラー
 };
-//定数バッファ
-cbuffer Transform : register(b0)//Transformという名前の定数バッファに0を割り当てる
+// 定数バッファ
+cbuffer Transform : register(b0) // Transformという名前の定数バッファに0を割り当てる
 {
-    //それぞれ行列変換
+    // それぞれ行列変換
     float4x4 World:packoffset(c0);
     float4x4 View:packoffset(c4);
     float4x4 Proj:packoffset(c8);
